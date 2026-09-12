@@ -17,11 +17,11 @@ from comparator import (
     summary_stats,
 )
 
-st.set_page_config(page_title="Program Comparator", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="Document/Program Comparator", page_icon="🔍", layout="wide")
 vault, store = initialise_page()
 store.setdefault("engineering_tool_records", [])
 
-st.title("Program Comparator")
+st.title("Document/Program Comparator")
 st.caption("Compare old and revised CNC programs or general documents locally inside the encrypted Engineering Vault system.")
 
 comparison_mode = st.radio(
