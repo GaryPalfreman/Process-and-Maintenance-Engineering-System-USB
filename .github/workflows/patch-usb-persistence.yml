@@ -1,0 +1,56 @@
+name: Patch USB Persistence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-usb-persistence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add persistence before reruns
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          files = [
+              Path('app.py'),
+              Path('pages/1_Engineering_Operations.py'),
+              Path('pages/2_Engineering_Control_Centre.py'),
+              Path('pages/3_Production_Readiness.py'),
+              Path('pages/4_Contacts_and_Suppliers.py'),
+          ]
+          for path in files:
+              text = path.read_text()
+              # Persist immediately before reruns. Avoid duplicating an existing persist call.
+              lines = text.splitlines()
+              out = []
+              for line in lines:
+                  stripped = line.strip()
+                  if 'st.rerun()' in stripped and (not out or 'persist(' not in out[-1]):
+                      indent = line[:len(line)-len(line.lstrip())]
+                      if stripped == 'st.rerun()':
+                          out.append(indent + 'persist(store)')
+                          out.append(line)
+                          continue
+                      # Handle compact one-line mutation/rerun statements conservatively.
+                      line = line.replace('st.rerun()', 'persist(store); st.rerun()')
+                  out.append(line)
+              path.write_text('\n'.join(out) + '\n')
+          PY
+      - name: Validate Python
+        run: python -m compileall -q app.py usb_storage.py usb_runtime.py launch_local.py pages
+      - name: Commit persistence patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py pages
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Persist USB data before Streamlit reruns"
+          git push
