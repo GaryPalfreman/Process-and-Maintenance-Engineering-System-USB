@@ -1,30 +1,18 @@
 # Process and Maintenance Engineering System — USB Edition
 
-This repository is the independent local USB/HDD edition of the Process and Maintenance Engineering System.
-
-It started from the web-edition baseline so the engineering data model, hidden UUID relationships, modules, Contacts & Suppliers, Production Readiness, Engineering Operations and Engineering Control Centre remain compatible with the web edition. The USB and web repositories are maintained separately.
+This repository is the independent local USB/HDD edition of the Process and Maintenance Engineering System. It is maintained separately from the web edition.
 
 ## Current status
 
-USB edition version: **0.4 — Operational Hardening test build**
+USB edition version: **0.7B-prep — Cross-platform portability preparation**
 
-The connected Engineering Vault is the live data source. The local application runs from the computer while engineering data, backups and engineering documents remain on the external HDD/SSD.
+Platform status:
 
-The current test vault is the exFAT drive `M-P-ENG-SYS`, initialised with an `ENGINEERING_SYSTEM` vault. The application finds it by `vault_identity.json`, not by the volume name, macOS mount path or Windows drive letter.
+- **macOS:** physically validated on the real `M-P-ENG-SYS` Engineering Vault
+- **Windows:** prepared in code, physical validation pending
+- **Linux:** prepared in code and checked by Linux CI, physical validation pending
 
-v0.4 adds:
-
-- live Engineering Vault presence monitoring every two seconds
-- write blocking if the vault disappears
-- backup blocking if the vault disappears
-- SHA-256 checksums for newly created ZIP backups
-- backup integrity validation
-- in-app restore of validated backups
-- automatic pre-restore safety backup
-- Save, Backup & Safely Eject workflow
-- a USB System Health page
-- a non-destructive persistence self-test across Assets, Engineering Actions, Maintenance and PM Schedules
-- linked hidden-UUID verification during the persistence self-test
+The external exFAT drive `M-P-ENG-SYS` remains the authoritative Engineering Vault. The application is installed locally on each computer while the encrypted engineering dataset, encrypted backups, vault identity and Documents folder remain on the external drive.
 
 ## Engineering Vault structure
 
@@ -32,91 +20,115 @@ v0.4 adds:
 M-P-ENG-SYS/
 ├── START ENGINEERING SYSTEM - MAC.command
 ├── START ENGINEERING SYSTEM - WINDOWS.cmd
+├── START ENGINEERING SYSTEM - LINUX.sh
 └── ENGINEERING_SYSTEM/
     ├── vault_identity.json
-    ├── engineering_data.json
+    ├── vault_security.json
+    ├── vault_encryption.json
+    ├── vault_recovery.json        # after recovery key is configured
+    ├── engineering_data.pmes
     ├── Backups/
     │   └── YYYY-MM/
+    │       └── *.pmesbak
     └── Documents/
 ```
 
-`engineering_data.json` remains compatible with the web edition schema and hidden UUID relationship model.
+The vault is found by its `vault_identity.json` UUID rather than a fixed macOS path, Windows drive letter or Linux mount path.
 
-## One-time computer setup
+## One-time setup on each computer
 
-Run `install_local.py` once on every Mac or Windows computer that will use the Engineering Vault.
+Connect `M-P-ENG-SYS`, obtain a copy of this repository, then run:
 
-The installer:
+```text
+python3 install_local.py
+```
 
-- confirms that exactly one Engineering Vault is connected
-- installs the local application to a predictable computer-local folder
-- creates a private Python virtual environment
-- installs the required Python packages
-- places both Mac and Windows launchers at the root of the Engineering Vault drive
-- creates a launcher on the current computer desktop
+On Windows, `py install_local.py` may be used instead.
 
-Local application locations:
+The installer creates a clean local runtime, a private Python virtual environment, installs requirements, refreshes all three launchers on the Engineering Vault, and creates a desktop launcher when the operating system exposes a Desktop folder.
+
+Local runtime locations:
 
 ```text
 macOS:   ~/Applications/PMES-USB/
 Windows: %LOCALAPPDATA%\PMES-USB\
+Linux:   ${XDG_DATA_HOME:-~/.local/share}/PMES-USB/
 ```
 
-After setup, normal operation does not require Bash, Terminal, Command Prompt or PowerShell commands.
+## Normal one-click use
 
-## Normal use after setup
+After one-time setup, connect the Engineering Vault and use the launcher for the current operating system:
 
-Connect `M-P-ENG-SYS`, then either:
+```text
+macOS   → START ENGINEERING SYSTEM - MAC.command
+Windows → START ENGINEERING SYSTEM - WINDOWS.cmd
+Linux   → START ENGINEERING SYSTEM - LINUX.sh
+```
 
-- double-click `START ENGINEERING SYSTEM - MAC.command` on macOS
-- double-click `START ENGINEERING SYSTEM - WINDOWS.cmd` on Windows
-- or use the desktop launcher created during setup
+The local launcher checks for exactly one valid Engineering Vault before starting Streamlit.
 
-The launcher checks that the Engineering Vault is present and then starts the local Streamlit application. Windows drive-letter changes do not matter.
+## Linux preparation
 
-Modern macOS and Windows versions intentionally restrict classic removable-media autorun. The supported workflow is therefore one-click launch rather than silently executing software as soon as the drive is attached. An optional authorised-computer background watcher can be considered later if automatic launch-on-connect is still desirable.
+Linux vault discovery currently checks normal removable-media locations including:
 
-## Storage and persistence
+```text
+/media/<user>/
+/run/media/<user>/
+/mnt/
+```
 
-`usb_storage.py` provides:
+The Linux launcher uses the local runtime under `~/.local/share/PMES-USB` unless `XDG_DATA_HOME` is configured. The installer can also create a `Process and Maintenance Engineering System.desktop` shortcut.
 
-- cross-platform drive discovery
-- Engineering Vault identity validation
-- drive-letter-independent vault detection
-- live vault-presence verification
-- direct JSON loading and saving
-- flushed atomic replacement of the live JSON
-- timestamped ZIP backups
+Typical Linux prerequisites are:
+
+- Python 3 with `venv` support
+- permission to read/write the exFAT Engineering Vault
+- a browser
+- normal desktop removable-drive mounting
+
+Distribution-specific packages may be required for Python venv or exFAT support. Linux is not considered operationally validated until the real `M-P-ENG-SYS` drive is tested on an actual Linux computer.
+
+## Security and encryption
+
+The current USB edition includes:
+
+- physical Engineering Vault requirement
+- PIN/password lock
+- AES-256-GCM authenticated encryption for the structured live dataset
+- encrypted `.pmesbak` backups
 - SHA-256 backup checksum sidecars
-- backup validation and restore helpers
-- automatic pre-restore safety backup
-- best-effort safe eject support for macOS and Windows
-- automatic backup-due checking
-- drive free-space/status reporting
-- filtering of common macOS internal and Time Machine mounts
+- recovery-key support
+- wrapped data-key model for safe PIN re-keying
+- emergency recovery-key unlock path
+- startup integrity verification
+- automatic encrypted session-open backup
+- encrypted session-close backup
+- backup retention controls
+- live drive-disconnect monitoring and blocked writes
 
-`usb_runtime.py` provides:
+The `Documents/` folder remains normal cross-platform files and is not application-encrypted in the current release.
 
-- one-vault-required startup behaviour
-- shared store initialisation across Streamlit pages
-- write blocking when the Engineering Vault is unavailable
-- live two-second vault monitoring
-- visible Engineering Vault status
-- manual Save and Create Vault Backup controls
-- Backup & Recovery controls
-- Save, Backup & Safely Eject session-ending workflow
+## Recovery & Integrity
 
-`usb_diagnostics.py` and `pages/5_USB_System_Health.py` provide a non-destructive HDD persistence test. The test creates temporary linked records in Assets, Engineering Actions, Maintenance and PM Schedules, saves them to the HDD, reloads them, verifies their UUIDs and relationships, then restores the original live dataset automatically. A safety backup is created before the test.
+The **Recovery & Integrity** page verifies:
 
-`launch_local.py` is the common cross-platform application launcher used by the clickable Mac and Windows files.
+- live encrypted data readability
+- valid and invalid encrypted backup counts
+- recovery readiness
+- latest valid backup
+- backup checksum/integrity status
 
-## Updating an already installed computer
+A separate recovery key can be generated and stored away from `M-P-ENG-SYS`. The recovery key is intended for emergency access if the normal PIN is unavailable.
 
-Repository changes do not automatically overwrite the installed local copy in `~/Applications/PMES-USB` or `%LOCALAPPDATA%\PMES-USB`.
+## Backup and safe removal
 
-After pulling a new USB-edition build, run the installer again. It refreshes the installed application while leaving the Engineering Vault dataset on the external drive untouched.
+The system creates encrypted backups under `Backups/YYYY-MM/`. Restores validate the selected backup first and create a pre-restore safety backup.
 
-On the current Mac:
+Use **Save, Backup & Safely Eject** before disconnecting the Engineering Vault. macOS safe eject is physically validated. Windows and Linux eject behaviour remains subject to physical validation on those operating systems.
+
+## Updating an installed computer
+
+Repository changes do not directly alter the installed runtime or the Engineering Vault data. After pulling a new build, run the installer again:
 
 ```bash
 cd ~/Downloads/Process-and-Maintenance-Engineering-System-USB
@@ -124,33 +136,7 @@ git pull
 python3 install_local.py
 ```
 
-After the update, return to the clickable launcher for normal use.
-
-## First installation on Windows
-
-Clone or copy the USB repository once, connect `M-P-ENG-SYS`, then run:
-
-```text
-py install_local.py
-```
-
-After installation, use the Windows launcher on the drive or desktop.
-
-## Backup, recovery and safe removal
-
-The live structured dataset is `engineering_data.json`. Saves use a temporary file and atomic replacement to reduce corruption risk.
-
-New ZIP backups are stored under `Backups/YYYY-MM/` and receive a matching `.sha256` checksum file. Legacy backups without a checksum can still be structurally validated.
-
-Before restoring a selected backup, the system validates the backup and automatically creates a `pre_restore` safety backup of the current live dataset.
-
-Use **Save, Backup & Safely Eject** before disconnecting the HDD. The system saves the live dataset, creates a session-close backup and asks the operating system to eject the drive. If automatic eject is unavailable, the data remains safely saved and the interface tells the user to eject manually.
-
-Do not physically disconnect the external drive while a save, restore, self-test or backup is in progress.
-
-## Security note
-
-`vault_identity.json` identifies the intended physical Engineering Vault but is not encryption or strong authentication. Because the drive is exFAT for native macOS/Windows compatibility, treat the current data as unencrypted unless an application-level encryption layer is added later.
+The installer replaces the local runtime snapshot while preserving the local `.venv` where appropriate and does not replace or reset Engineering Vault data.
 
 ## Relationship to the web edition
 
@@ -160,8 +146,10 @@ Web repository:
 USB repository:
 `GaryPalfreman/Process-and-Maintenance-Engineering-System-USB`
 
-There is no automatic synchronisation between them. Changes are transferred only when explicitly requested.
+There is no automatic synchronisation between them. Changes move between repositories only when explicitly requested.
 
 ## Validation
 
-`.github/workflows/usb-ci.yml` performs Python syntax validation across the main application, support modules and Streamlit pages on USB-edition Python changes.
+`.github/workflows/usb-ci.yml` runs Python syntax validation on Ubuntu and also checks the Linux launcher shell syntax and Linux installer-preparation markers.
+
+A successful Linux CI run means the Linux preparation code is syntactically sound. It does **not** replace physical validation with the actual exFAT Engineering Vault, desktop environment, mount behaviour and safe-eject workflow.
