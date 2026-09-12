@@ -1,8 +1,8 @@
 """Authenticated at-rest encryption for the PMES USB vault.
 
-Uses AES-256-GCM with a key derived from the user's vault PIN/password using
-PBKDF2-HMAC-SHA256. The salt is public metadata; the PIN/password is never
-written to disk by this module.
+The live-data key is random. A key-encryption key derived from the user's
+PIN/password wraps that random key. This allows future PIN changes by re-wrapping
+the data key instead of re-encrypting the entire engineering dataset.
 """
 from __future__ import annotations
 
@@ -18,21 +18,9 @@ MAGIC = b"PMESENC1\n"
 DEFAULT_ITERATIONS = 600_000
 
 
-def new_encryption_metadata() -> dict:
-    return {
-        "schema": "pmes-encryption-v1",
-        "algorithm": "AES-256-GCM",
-        "kdf": "PBKDF2-HMAC-SHA256",
-        "iterations": DEFAULT_ITERATIONS,
-        "salt": base64.b64encode(os.urandom(16)).decode("ascii"),
-    }
-
-
-def derive_key(pin: str, metadata: dict) -> bytes:
+def _derive_wrap_key(pin: str, salt: bytes, iterations: int) -> bytes:
     if not pin:
         raise ValueError("Vault PIN/password is required for encrypted storage")
-    salt = base64.b64decode(metadata["salt"])
-    iterations = int(metadata.get("iterations", DEFAULT_ITERATIONS))
     return hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, iterations, dklen=32)
 
 
@@ -54,6 +42,43 @@ def decrypt_bytes(payload: bytes, key: bytes, associated_data: bytes = b"PMES-US
     nonce = base64.b64decode(envelope["nonce"])
     ciphertext = base64.b64decode(envelope["ciphertext"])
     return AESGCM(key).decrypt(nonce, ciphertext, associated_data)
+
+
+def new_encryption_metadata(pin: str) -> dict:
+    salt = os.urandom(16)
+    iterations = DEFAULT_ITERATIONS
+    wrap_key = _derive_wrap_key(pin, salt, iterations)
+    data_key = os.urandom(32)
+    wrapped = encrypt_bytes(data_key, wrap_key, b"PMES-DATA-KEY")
+    return {
+        "schema": "pmes-encryption-v1",
+        "algorithm": "AES-256-GCM",
+        "kdf": "PBKDF2-HMAC-SHA256",
+        "iterations": iterations,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "wrapped_data_key": base64.b64encode(wrapped).decode("ascii"),
+    }
+
+
+def derive_key(pin: str, metadata: dict) -> bytes:
+    salt = base64.b64decode(metadata["salt"])
+    iterations = int(metadata.get("iterations", DEFAULT_ITERATIONS))
+    wrap_key = _derive_wrap_key(pin, salt, iterations)
+    wrapped = base64.b64decode(metadata["wrapped_data_key"])
+    return decrypt_bytes(wrapped, wrap_key, b"PMES-DATA-KEY")
+
+
+def rewrap_metadata(current_pin: str, new_pin: str, metadata: dict) -> dict:
+    data_key = derive_key(current_pin, metadata)
+    salt = os.urandom(16)
+    iterations = DEFAULT_ITERATIONS
+    wrap_key = _derive_wrap_key(new_pin, salt, iterations)
+    wrapped = encrypt_bytes(data_key, wrap_key, b"PMES-DATA-KEY")
+    result = dict(metadata)
+    result["iterations"] = iterations
+    result["salt"] = base64.b64encode(salt).decode("ascii")
+    result["wrapped_data_key"] = base64.b64encode(wrapped).decode("ascii")
+    return result
 
 
 def is_encrypted_bytes(payload: bytes) -> bool:
