@@ -1,10 +1,12 @@
+import base64
 import csv
 import io
+import uuid
 from datetime import datetime
 
 import streamlit as st
 
-from usb_runtime import initialise_page
+from usb_runtime import initialise_page, persist
 from comparator import (
     cnc_compare,
     ignore_position_compare,
@@ -17,9 +19,10 @@ from comparator import (
 
 st.set_page_config(page_title="Program Comparator", page_icon="🔍", layout="wide")
 vault, store = initialise_page()
+store.setdefault("engineering_tool_records", [])
 
 st.title("Program Comparator")
-st.caption("Compare old and revised CNC programs or general documents locally inside the Engineering Vault system.")
+st.caption("Compare old and revised CNC programs or general documents locally inside the encrypted Engineering Vault system.")
 
 comparison_mode = st.radio(
     "Comparison type",
@@ -62,6 +65,7 @@ except Exception as exc:
 
 report_bytes = None
 report_name = None
+summary_payload = {}
 
 if is_cnc:
     result = cnc_compare(content1, content2, ignore_sequence=ignore_sequence, ignore_comments=ignore_comments, ignore_whitespace=ignore_whitespace)
@@ -69,6 +73,14 @@ if is_cnc:
     modified = sum(c["status"] == "modified" for c in changes)
     inserted = sum(c["status"] == "inserted" for c in changes)
     deleted = sum(c["status"] == "deleted" for c in changes)
+    summary_payload = {
+        "matched_blocks": result["matched_blocks"],
+        "modified": modified,
+        "inserted": inserted,
+        "deleted": deleted,
+        "total_changes": len(changes),
+        "category_counts": result["category_counts"],
+    }
 
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Matched blocks", result["matched_blocks"])
@@ -115,7 +127,6 @@ if is_cnc:
             st.dataframe(rows, use_container_width=True, hide_index=True)
         else:
             st.success("No changes to summarize.")
-
         report_buffer = io.StringIO()
         writer = csv.writer(report_buffer)
         writer.writerow(["status", "old_line", "new_line", "categories", "address", "old_value", "new_value", "old_block", "new_block"])
@@ -131,6 +142,7 @@ if is_cnc:
 else:
     stats = summary_stats(content1, content2)
     diffs = line_compare(content1, content2)
+    summary_payload = dict(stats)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Old file lines", stats["file1_lines"])
     m2.metric("New file lines", stats["file2_lines"])
@@ -182,18 +194,41 @@ with tab_merge:
     st.download_button("Download merged file", data=merged, file_name=f"{file1.name.rsplit('.', 1)[0]}_merged.txt", mime="text/plain", use_container_width=True)
 
 st.divider()
-st.subheader("Engineering Vault record")
+st.subheader("Encrypted Engineering Vault record")
 comparison_note = st.text_input("Optional comparison note / process-change reference", placeholder="e.g. AT7701 OP1 cycle-time update")
-if report_bytes and report_name:
-    if st.button("Save Comparison Report to Engineering Vault", type="primary", use_container_width=True):
-        folder = vault / "Documents" / "Program_Comparisons"
-        folder.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target = folder / f"{timestamp}_{report_name}"
-        target.write_bytes(report_bytes)
-        meta = folder / f"{timestamp}_{report_name}.note.txt"
-        meta.write_text(
-            f"Old/reference: {file1.name}\nNew/revised: {file2.name}\nMode: {comparison_mode}\nNote: {comparison_note}\n",
-            encoding="utf-8",
-        )
-        st.success(f"Saved to Engineering Vault: Documents/Program_Comparisons/{target.name}")
+if report_bytes and report_name and st.button("Save Comparison Report to Encrypted Vault", type="primary", use_container_width=True):
+    record = {
+        "uuid": str(uuid.uuid4()),
+        "type": "program_comparison",
+        "created_at": datetime.now().replace(microsecond=0).isoformat(),
+        "mode": comparison_mode,
+        "old_file": file1.name,
+        "new_file": file2.name,
+        "note": comparison_note,
+        "summary": summary_payload,
+        "report_name": report_name,
+        "report_b64": base64.b64encode(report_bytes).decode("ascii"),
+    }
+    store["engineering_tool_records"].append(record)
+    persist(store)
+    st.success("Comparison report saved inside the encrypted Engineering Vault dataset.")
+
+saved = [r for r in store.get("engineering_tool_records", []) if r.get("type") == "program_comparison"]
+with st.expander(f"Saved comparison reports ({len(saved)})", expanded=False):
+    if not saved:
+        st.caption("No encrypted comparison reports saved yet.")
+    for record in reversed(saved[-25:]):
+        st.markdown(f"**{record.get('old_file','')} → {record.get('new_file','')}** · {record.get('created_at','')}")
+        if record.get("note"):
+            st.caption(record["note"])
+        try:
+            payload = base64.b64decode(record.get("report_b64", ""))
+            st.download_button(
+                "Download saved report",
+                data=payload,
+                file_name=record.get("report_name", "comparison_report.txt"),
+                key=f"cmp_saved_{record.get('uuid')}",
+                use_container_width=True,
+            )
+        except Exception:
+            st.warning("Stored report payload could not be decoded.")
