@@ -1,176 +1,80 @@
-# Process and Maintenance Engineering System
+# Process and Maintenance Engineering System — USB Edition
 
-A company-wide Streamlit system for process engineering, maintenance engineering, engineering trials, machinery/tooling research, asset management and engineering knowledge.
+This repository is the local USB/HDD edition of the Process and Maintenance Engineering System.
 
-Live app: https://process-and-maintenance-engineering-system-web.streamlit.app
+It was bootstrapped from the current web version so the engineering data model, hidden UUID relationships, modules, Contacts & Suppliers system, Production Readiness workspace, Engineering Operations and Engineering Control Centre remain compatible with the web edition.
 
-## Core design
+## Purpose
 
-The system uses hidden UUIDs for internal relationships. Human-facing business IDs, legacy IDs, aliases and convenient display IDs remain metadata, so numbering can change without breaking links between records.
+The USB edition is intended to become the operational local version while the web repository remains available for development, testing and layout changes.
 
-The current deployment is intentionally optimised for a **single engineering user**. Persistence remains local-first: the current Streamlit session holds the working data and downloaded JSON/ZIP backups are the durable record. No persistent multi-user database or account system is required for the present use case.
+The design target is:
 
-## Main engineering system
+- run Streamlit locally on the computer
+- keep the live engineering dataset on an external USB HDD/SSD
+- preserve the same JSON schema as the web edition
+- store backups and engineering documents on the external drive
+- allow the external drive to act as the physical data vault
+- keep web and USB datasets import/export compatible
 
-The core application includes:
+## Current repository status
 
-- Dashboard with engineering workload, PM due/overdue, breakdown downtime, MTTR and MTBF
-- Asset Register with equipment profiles, criticality, utilities, safety, configuration and maintenance history
-- Products & Process Routes
-- Engineering Action Register
-- Preventive Maintenance Schedules
-- Maintenance & Breakdown Management
-- Process Engineering & Improvement
-- Engineering Trials
-- Machinery & Tooling Research
-- Tooling Knowledge Library
-- Spare Parts / Consumables Register
-- RCA & Engineering Investigations
-- Engineering Management PDF reporting
-- System JSON and ZIP backup
+The complete web application baseline has been copied into this repository.
 
-## Engineering Operations
+`usb_storage.py` adds the external-drive storage engine. It currently provides:
 
-`pages/1_Engineering_Operations.py` provides the execution layer:
+- detection of external mount locations on macOS, Windows and Linux
+- creation of an `ENGINEERING_SYSTEM` vault folder
+- a unique vault identity
+- direct JSON load/save helpers
+- atomic replacement of the live engineering JSON
+- timestamped ZIP backups
+- backup-due checking
+- external-drive free-space/status reporting
 
-- Task-by-task PM completion
-- Automatic next-due calculation
-- Labour, service and parts cost capture
-- Automatic spare stock deduction
-- Machine-specific maintenance packs
-- Breakdown follow-up to Engineering Action or RCA
-- Failure categorisation and recurring-failure detection
-- Downtime Pareto
-- Maintenance cost analysis
-- Linked Asset Engineering History
+The storage engine uses the existing `blank_store`, `load_store`, `store_bytes` and `backup_zip` functions, so the USB data remains compatible with the web system.
 
-Initial maintenance packs cover CNC, Grinding, Cutting, Laser, Filtration, Chiller, Extraction, Pump, Vacuum and Furnace. They are starting templates and must be verified against the actual equipment, OEM documentation and internal engineering requirements before becoming controlled standards. Laser tasks remain deliberately high-level so the final standard follows the actual in-house laser design/configuration.
+## Intended external-drive structure
 
-Operational helpers are in `next_layer.py` and `advanced_operations.py`.
+```text
+ENGINEERING_SYSTEM/
+├── vault_identity.json
+├── engineering_data.json
+├── Backups/
+│   └── YYYY-MM/
+└── Documents/
+```
 
-## Engineering Control Centre
+The Documents area is intended for manuals, drawings, supplier documents, service reports, photos, calibration records and other engineering references that should live beside the structured system data.
 
-`pages/2_Engineering_Control_Centre.py` provides the lightweight CMMS/control-centre layer:
+## Security note
 
-- Maintenance work orders
-- Planned shutdown management
-- Condition-monitoring readings and trends
-- Asset criticality / risk scoring
-- Advisory automatic RCA triggers
-- Engineering handover dashboard
+The vault identity is an application-level physical-drive marker, not encryption. For confidential company engineering data, the external HDD/SSD should also use operating-system-level encryption such as encrypted APFS on macOS, BitLocker on Windows or LUKS on Linux.
 
-The control-centre logic is in `control_centre.py`.
+A stronger authorised-drive/pairing layer can be added after the local storage workflow has been proven on the actual external drive.
 
-## Production Readiness Workspace
+## Running locally
 
-`pages/3_Production_Readiness.py` is the final single-user production-readiness layer. Its engine is `production_readiness.py`.
+Create a Python virtual environment, install the requirements and run:
 
-### My Engineering Day
+```bash
+streamlit run app.py
+```
 
-A daily attention view combines urgent engineering work, assets down, stock warnings and open engineering changes so the system opens on actionable work rather than static records.
+The main engineering application is unchanged from the web baseline at this stage, ensuring that the working web version remains a known-good reference while the local storage integration is developed independently.
 
-### Quick Capture and Engineering Inbox
+## Relationship to the web edition
 
-Fast capture supports breakdown notes, engineering issues, maintenance items, process ideas, trial notes, research ideas and general notes. Captured items remain in an Engineering Inbox until promoted into a formal Action, Maintenance record, Trial, Research record, Engineering Change or Diary entry. Promotion retains the source link.
+Web repository:
+`GaryPalfreman/Process-and-Maintenance-Engineering-System-web`
 
-### Global engineering search
+USB repository:
+`GaryPalfreman/Process-and-Maintenance-Engineering-System-USB`
 
-One search scans assets, maintenance, PM, actions, work orders, shutdowns, condition readings, process improvements, trials, research, RCA, products/routes, tooling, spares, diary entries, decisions, engineering changes, lessons learned and document references.
+The web edition should remain the development/testing version. The USB edition should become the local operational version once the external-drive workflow has been validated.
 
-### Asset 360
-
-Selecting an asset shows a combined engineering timeline plus linked:
-
-- Maintenance
-- PM schedules
-- Work orders
-- Condition monitoring
-- Engineering actions
-- Process improvements
-- Trials
-- RCA
-- Engineering changes
-- Tooling
-- Spares
-- Lessons learned
-- References
-
-### Engineering Change Register
-
-Formal change control follows:
-
-`Problem -> Existing State -> Proposed Change -> Risk Review -> Trial -> Decision -> Implementation -> Validation -> Before/After Result -> Final Standard`
-
-This creates a defensible engineering history explaining why a process, machine configuration, tool, fixture or standard was changed.
-
-### Engineering knowledge system
-
-The production workspace adds:
-
-- Engineering Diary
-- Decision Register including rationale, evidence and alternatives considered
-- Lessons Learned / Known Issues
-- Structured references for drawings, manuals, photos, CNC programs, supplier documents, calibration records, procedures, specifications, folders and web links
-
-References store locations/identifiers rather than forcing large files into the Streamlit JSON.
-
-### Record lifecycle and display IDs
-
-Records can be assigned optional convenient display numbers such as `WO-0001`, `RCA-0001`, `EC-0001` and similar module-specific numbers while hidden UUIDs remain the relational keys.
-
-Records can move through Draft, Active, Complete, Closed and Archived lifecycle states. Archiving preserves engineering history rather than deleting it. Records can also be cloned; clones receive a new hidden UUID and new display ID.
-
-### Data quality and system health
-
-Built-in checks flag examples such as:
-
-- Active assets without PM schedules
-- Breakdown records without a failure category/diagnosis
-- Completed work orders without completion notes
-- Spares without minimum stock levels
-- Overdue engineering actions
-- Missing/orphaned UUID links
-
-The System Health view reports schema/version, record counts, data-quality issues, orphan links and backup age.
-
-### Backup and recovery
-
-For the present single-user architecture:
-
-- Downloaded JSON/ZIP remains the durable backup
-- Configurable backup reminders flag when a backup is due
-- Uploaded JSON can be validated before restoration
-- A temporary in-session recovery snapshot can be created/restored for protection against accidental edits during the current browser session
-
-An in-session snapshot is **not** a substitute for downloading the full backup because the Streamlit session itself is not permanent.
-
-## Contacts & Suppliers
-
-`pages/4_Contacts_and_Suppliers.py` adds the external-support and purchasing layer. Its backend is `supplier_contacts.py`.
-
-The module stores:
-
-- Supplier / contractor companies
-- Individual contact people and their roles
-- Phone, mobile, email, website, address and account/customer numbers
-- Preferred contact method and availability
-- Company capabilities and what they are used for
-- Usage status: Preferred, Approved / Used, Alternative, Trial / Prospective, Do Not Use or Inactive
-- Engagement procedures for Service & Repair, Emergency Breakdown, Spare Parts, Tooling Purchase, Consumables Purchase, Equipment Purchase / RFQ, Technical Support, Calibration, Contractor Attendance and Warranty Claims
-- Required information, approval/PO process, escalation and emergency process
-- Links from suppliers/contacts/procedures to assets, tooling, spares, research, work orders, maintenance and products using hidden UUID relationships
-- Supplier usage and performance history including response time, recorded spend, outcome and optional 0–5 performance rating
-
-The Directory can answer practical questions such as who services a machine, who supplies a tool or spare, which contact to use, and the documented procedure for arranging the work or purchase.
-
-Removing a supplier/contact from active use archives the record instead of destroying history. Historical jobs, purchases and engineering relationships remain intact in JSON/ZIP backups.
-
-## JSON compatibility
+## Data compatibility
 
 Schema: `process-maintenance-engineering-system`
 
-The core loader remains compatible with version 1 and version 2 JSON backups. Production-readiness and supplier/contact collections are additive and are preserved because unknown top-level collections are retained by the loader.
-
-## Privacy / storage
-
-The hosted Streamlit app does not use a persistent database. Uploaded JSON is processed by the hosted Streamlit session, so data does travel to the Streamlit server during use. Downloaded JSON/ZIP files are the intended persistent record. If data must never leave the local computer, run the app locally instead of using the hosted deployment.
+Hidden UUIDs remain the relational keys. Human-facing business IDs, legacy IDs and aliases remain editable metadata. JSON exported from the web edition can therefore be migrated into the USB edition without redesigning record relationships.
