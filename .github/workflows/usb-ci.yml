@@ -23,7 +23,7 @@ jobs:
           sh -n "START ENGINEERING SYSTEM - LINUX.sh"
       - name: Linux installer preparation check
         run: |
-          grep -q 'platform.system() == "Linux"' install_local.py
+          grep -q 'if system == "Linux":' install_local.py
           grep -q 'XDG_DATA_HOME' install_local.py
           grep -q 'START ENGINEERING SYSTEM - LINUX.sh' install_local.py
           echo "Linux installer preparation: PASS"
