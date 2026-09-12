@@ -3,7 +3,7 @@
 Run this once on each Mac or Windows computer that will use the Engineering Vault.
 It installs an independent local application copy, creates a private virtual
 environment, installs requirements, and places cross-platform launchers on the
-connected Engineering Vault drive.
+connected Engineering Vault drive and the local desktop.
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from usb_storage import find_vaults
 APP_FOLDER = "PMES-USB"
 MAC_LAUNCHER = "START ENGINEERING SYSTEM - MAC.command"
 WINDOWS_LAUNCHER = "START ENGINEERING SYSTEM - WINDOWS.cmd"
+DESKTOP_NAME_MAC = "Process and Maintenance Engineering System.command"
+DESKTOP_NAME_WINDOWS = "Process and Maintenance Engineering System.cmd"
 
 
 def install_root() -> Path:
@@ -100,6 +102,23 @@ def write_launchers(root: Path) -> None:
         pass
 
 
+def write_desktop_launcher() -> Path | None:
+    desktop = Path.home() / "Desktop"
+    if not desktop.exists():
+        return None
+    if platform.system() == "Windows":
+        target = desktop / DESKTOP_NAME_WINDOWS
+        target.write_text(windows_launcher_text(), encoding="utf-8", newline="\r\n")
+    else:
+        target = desktop / DESKTOP_NAME_MAC
+        target.write_text(mac_launcher_text(), encoding="utf-8", newline="\n")
+        try:
+            target.chmod(0o755)
+        except OSError:
+            pass
+    return target
+
+
 def main() -> int:
     vaults = find_vaults()
     if len(vaults) != 1:
@@ -118,11 +137,14 @@ def main() -> int:
     copy_application(source, target)
     create_environment(target)
     write_launchers(root)
+    desktop_launcher = write_desktop_launcher()
 
     print("\nInstallation complete.")
-    print(f"Mac launcher: {root / MAC_LAUNCHER}")
-    print(f"Windows launcher: {root / WINDOWS_LAUNCHER}")
-    print("From now on, plug in the drive and double-click the launcher for this computer.")
+    print(f"Mac launcher on drive: {root / MAC_LAUNCHER}")
+    print(f"Windows launcher on drive: {root / WINDOWS_LAUNCHER}")
+    if desktop_launcher:
+        print(f"Desktop launcher: {desktop_launcher}")
+    print("From now on, connect the Engineering Vault and double-click the launcher for this computer.")
     return 0
 
 
