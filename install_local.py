@@ -22,9 +22,15 @@ APP_FOLDER = "PMES-USB"
 MAC_LAUNCHER = "START ENGINEERING SYSTEM - MAC.command"
 WINDOWS_LAUNCHER = "START ENGINEERING SYSTEM - WINDOWS.cmd"
 LINUX_LAUNCHER = "START ENGINEERING SYSTEM - LINUX.sh"
+MAC_IPAD_LAUNCHER = "START ENGINEERING SYSTEM - IPAD MODE - MAC.command"
+WINDOWS_IPAD_LAUNCHER = "START ENGINEERING SYSTEM - IPAD MODE - WINDOWS.cmd"
+LINUX_IPAD_LAUNCHER = "START ENGINEERING SYSTEM - IPAD MODE - LINUX.sh"
 DESKTOP_NAME_MAC = "Process and Maintenance Engineering System.command"
 DESKTOP_NAME_WINDOWS = "Process and Maintenance Engineering System.cmd"
 DESKTOP_NAME_LINUX = "Process and Maintenance Engineering System.desktop"
+DESKTOP_NAME_MAC_IPAD = "PMES - iPad Mode.command"
+DESKTOP_NAME_WINDOWS_IPAD = "PMES - iPad Mode.cmd"
+DESKTOP_NAME_LINUX_IPAD = "PMES - iPad Mode.desktop"
 
 EXCLUDED_NAMES = {
     ".git", ".github", ".venv", "__pycache__", ".DS_Store",
@@ -113,8 +119,9 @@ def create_environment(target: Path) -> Path:
     return python
 
 
-def mac_launcher_text() -> str:
-    return '''#!/bin/bash
+def mac_launcher_text(network: bool = False) -> str:
+    mode = " --network" if network else ""
+    return f'''#!/bin/bash
 set -e
 APP="$HOME/Applications/PMES-USB"
 PY="$APP/.venv/bin/python"
@@ -123,12 +130,13 @@ if [ ! -x "$PY" ]; then
   exit 1
 fi
 cd "$APP"
-exec "$PY" launch_local.py
+exec "$PY" launch_local.py{mode}
 '''
 
 
-def windows_launcher_text() -> str:
-    return r'''@echo off
+def windows_launcher_text(network: bool = False) -> str:
+    mode = " --network" if network else ""
+    return rf'''@echo off
 setlocal
 set "APP=%LOCALAPPDATA%\PMES-USB"
 set "PY=%APP%\.venv\Scripts\python.exe"
@@ -139,15 +147,16 @@ if not exist "%PY%" (
   exit /b 1
 )
 cd /d "%APP%"
-start "PMES USB" "%PY%" launch_local.py
+start "PMES USB" "%PY%" launch_local.py{mode}
 exit /b 0
 '''
 
 
-def linux_launcher_text() -> str:
-    return '''#!/bin/sh
+def linux_launcher_text(network: bool = False) -> str:
+    mode = " --network" if network else ""
+    return f'''#!/bin/sh
 set -eu
-APP="${XDG_DATA_HOME:-$HOME/.local/share}/PMES-USB"
+APP="${{XDG_DATA_HOME:-$HOME/.local/share}}/PMES-USB"
 PY="$APP/.venv/bin/python"
 if [ ! -x "$PY" ]; then
   printf '%s\n' 'Engineering System is not installed on this Linux computer.'
@@ -158,7 +167,7 @@ if [ ! -x "$PY" ]; then
   exit 1
 fi
 cd "$APP"
-exec "$PY" launch_local.py
+exec "$PY" launch_local.py{mode}
 '''
 
 
@@ -167,25 +176,30 @@ def write_launchers(root: Path) -> None:
         root / MAC_LAUNCHER: (mac_launcher_text(), "\n"),
         root / WINDOWS_LAUNCHER: (windows_launcher_text(), "\r\n"),
         root / LINUX_LAUNCHER: (linux_launcher_text(), "\n"),
+        root / MAC_IPAD_LAUNCHER: (mac_launcher_text(True), "\n"),
+        root / WINDOWS_IPAD_LAUNCHER: (windows_launcher_text(True), "\r\n"),
+        root / LINUX_IPAD_LAUNCHER: (linux_launcher_text(True), "\n"),
     }
     for path, (text, newline) in launchers.items():
         path.write_text(text, encoding="utf-8", newline=newline)
-    for path in (root / MAC_LAUNCHER, root / LINUX_LAUNCHER):
+    for path in (root / MAC_LAUNCHER, root / LINUX_LAUNCHER, root / MAC_IPAD_LAUNCHER, root / LINUX_IPAD_LAUNCHER):
         try:
             path.chmod(0o755)
         except OSError:
             pass
 
 
-def linux_desktop_text(target: Path) -> str:
+def linux_desktop_text(target: Path, network: bool = False) -> str:
     python = target / ".venv" / "bin" / "python"
     launcher = target / "launch_local.py"
+    mode = " --network" if network else ""
+    name = "Process and Maintenance Engineering System - iPad Mode" if network else "Process and Maintenance Engineering System"
     return f'''[Desktop Entry]
 Type=Application
 Version=1.0
-Name=Process and Maintenance Engineering System
+Name={name}
 Comment=Open the PMES USB Engineering Vault
-Exec={python} {launcher}
+Exec={python} {launcher}{mode}
 Icon=drive-harddisk
 Terminal=false
 Categories=Office;Utility;
@@ -193,29 +207,41 @@ StartupNotify=true
 '''
 
 
-def write_desktop_launcher() -> Path | None:
+def write_desktop_launcher() -> list[Path]:
     desktop = Path.home() / "Desktop"
     if not desktop.exists():
-        return None
+        return []
     system = platform.system()
+    created: list[Path] = []
     if system == "Windows":
-        target = desktop / DESKTOP_NAME_WINDOWS
-        target.write_text(windows_launcher_text(), encoding="utf-8", newline="\r\n")
+        normal = desktop / DESKTOP_NAME_WINDOWS
+        network = desktop / DESKTOP_NAME_WINDOWS_IPAD
+        normal.write_text(windows_launcher_text(), encoding="utf-8", newline="\r\n")
+        network.write_text(windows_launcher_text(True), encoding="utf-8", newline="\r\n")
+        created.extend([normal, network])
     elif system == "Linux":
-        target = desktop / DESKTOP_NAME_LINUX
-        target.write_text(linux_desktop_text(install_root()), encoding="utf-8", newline="\n")
-        try:
-            target.chmod(0o755)
-        except OSError:
-            pass
+        normal = desktop / DESKTOP_NAME_LINUX
+        network = desktop / DESKTOP_NAME_LINUX_IPAD
+        normal.write_text(linux_desktop_text(install_root()), encoding="utf-8", newline="\n")
+        network.write_text(linux_desktop_text(install_root(), True), encoding="utf-8", newline="\n")
+        for target in (normal, network):
+            try:
+                target.chmod(0o755)
+            except OSError:
+                pass
+        created.extend([normal, network])
     else:
-        target = desktop / DESKTOP_NAME_MAC
-        target.write_text(mac_launcher_text(), encoding="utf-8", newline="\n")
-        try:
-            target.chmod(0o755)
-        except OSError:
-            pass
-    return target
+        normal = desktop / DESKTOP_NAME_MAC
+        network = desktop / DESKTOP_NAME_MAC_IPAD
+        normal.write_text(mac_launcher_text(), encoding="utf-8", newline="\n")
+        network.write_text(mac_launcher_text(True), encoding="utf-8", newline="\n")
+        for target in (normal, network):
+            try:
+                target.chmod(0o755)
+            except OSError:
+                pass
+        created.extend([normal, network])
+    return created
 
 
 def main() -> int:
@@ -237,7 +263,7 @@ def main() -> int:
     copy_application(source, target)
     create_environment(target)
     write_launchers(root)
-    desktop_launcher = write_desktop_launcher()
+    desktop_launchers = write_desktop_launcher()
 
     legacy_git = target / ".git"
     if legacy_git.exists():
@@ -250,10 +276,13 @@ def main() -> int:
     print(f"Mac launcher on drive: {root / MAC_LAUNCHER}")
     print(f"Windows launcher on drive: {root / WINDOWS_LAUNCHER}")
     print(f"Linux launcher on drive: {root / LINUX_LAUNCHER}")
-    if desktop_launcher:
+    print(f"Mac iPad-mode launcher on drive: {root / MAC_IPAD_LAUNCHER}")
+    print(f"Windows iPad-mode launcher on drive: {root / WINDOWS_IPAD_LAUNCHER}")
+    print(f"Linux iPad-mode launcher on drive: {root / LINUX_IPAD_LAUNCHER}")
+    for desktop_launcher in desktop_launchers:
         print(f"Desktop launcher: {desktop_launcher}")
     print("Engineering Vault data was not replaced or reset.")
-    print("From now on, connect the Engineering Vault and double-click the launcher for this computer.")
+    print("Use the iPad-mode launcher only on a trusted local network.")
     return 0
 
 
