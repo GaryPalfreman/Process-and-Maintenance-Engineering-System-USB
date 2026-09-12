@@ -48,9 +48,11 @@ else:
         with st.form("encrypt_vault"):
             access_value = st.text_input("Re-enter vault PIN / password", type="password")
             confirm = st.checkbox("I understand this changes the PMES on-disk storage format")
-            submit = st.form_submit_button("Enable Encrypted Vault Storage", type="primary", use_container_width=True, disabled=not confirm)
+            submit = st.form_submit_button("Enable Encrypted Vault Storage", type="primary", use_container_width=True)
         if submit:
-            if not verify_pin(vault, access_value):
+            if not confirm:
+                st.error("Tick the confirmation box before enabling encrypted storage.")
+            elif not verify_pin(vault, access_value):
                 st.error("Access value was not accepted. No storage change was made.")
             else:
                 try:
