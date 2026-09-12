@@ -1,0 +1,70 @@
+name: Wire USB Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/wire-usb-runtime.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wire Engineering Vault runtime
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected block not found in {path}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              'app.py',
+              'from engineering_system import *\n\nst.set_page_config(page_title="Process and Maintenance Engineering System", page_icon="🛠️", layout="wide")\nst.markdown("<style>.block-container{max-width:1500px;padding-top:1rem}div[data-testid=\'stMetric\']{border:1px solid #7774;border-radius:12px;padding:10px}</style>",unsafe_allow_html=True)\nif "pm_store" not in st.session_state: st.session_state.pm_store=blank_store()\nstore=st.session_state.pm_store\n\ndef opts(module): return {record_label(r):r.get("system_uuid") for r in store.get(module,[])}\ndef add(module,r): store[module].append(r); st.rerun()\n',
+              'from engineering_system import *\nfrom usb_runtime import initialise_page, persist\n\nst.set_page_config(page_title="Process and Maintenance Engineering System USB", page_icon="🛠️", layout="wide")\nst.markdown("<style>.block-container{max-width:1500px;padding-top:1rem}div[data-testid=\'stMetric\']{border:1px solid #7774;border-radius:12px;padding:10px}</style>",unsafe_allow_html=True)\n_vault, store = initialise_page()\n\ndef opts(module): return {record_label(r):r.get("system_uuid") for r in store.get(module,[])}\ndef add(module,r):\n    store[module].append(r)\n    persist(store)\n    st.rerun()\n'
+          )
+
+          replace(
+              'app.py',
+              'st.session_state.pm_store=load_store(up.getvalue()); st.session_state.loaded_key=key; st.rerun()',
+              'st.session_state.pm_store=load_store(up.getvalue()); store=st.session_state.pm_store; persist(store); st.session_state.loaded_key=key; st.rerun()'
+          )
+
+          pages = {
+              'pages/1_Engineering_Operations.py': (
+                  'from advanced_operations import (\n    checklist_items, apply_pm_completion_details, downtime_pareto, recurring_failures,\n    maintenance_cost_summary, MAINTENANCE_PACKS, seed_maintenance_pack,\n)\n\nst.set_page_config(page_title="Engineering Operations", page_icon="🔧", layout="wide")\nif "pm_store" not in st.session_state:\n    st.session_state.pm_store = blank_store()\nstore = st.session_state.pm_store\n',
+                  'from advanced_operations import (\n    checklist_items, apply_pm_completion_details, downtime_pareto, recurring_failures,\n    maintenance_cost_summary, MAINTENANCE_PACKS, seed_maintenance_pack,\n)\nfrom usb_runtime import initialise_page, persist\n\nst.set_page_config(page_title="Engineering Operations", page_icon="🔧", layout="wide")\n_vault, store = initialise_page()\n'
+              ),
+              'pages/2_Engineering_Control_Centre.py': (
+                  'from control_centre import *\n\nst.set_page_config(page_title="Engineering Control Centre", page_icon="🧭", layout="wide")\nif "pm_store" not in st.session_state:\n    st.session_state.pm_store=blank_store()\nstore=st.session_state.pm_store\n',
+                  'from control_centre import *\nfrom usb_runtime import initialise_page, persist\n\nst.set_page_config(page_title="Engineering Control Centre", page_icon="🧭", layout="wide")\n_vault, store = initialise_page()\n'
+              ),
+              'pages/3_Production_Readiness.py': (
+                  'from production_readiness import *\n\nst.set_page_config(page_title="Production Readiness", page_icon="✅", layout="wide")\nif "pm_store" not in st.session_state:\n    st.session_state.pm_store=blank_store()\nstore=st.session_state.pm_store\n',
+                  'from production_readiness import *\nfrom usb_runtime import initialise_page, persist\n\nst.set_page_config(page_title="Production Readiness", page_icon="✅", layout="wide")\n_vault, store = initialise_page()\n'
+              ),
+              'pages/4_Contacts_and_Suppliers.py': (
+                  ')\n\nst.set_page_config(page_title="Contacts & Suppliers", page_icon="📇", layout="wide")\nif "pm_store" not in st.session_state:\n    st.session_state.pm_store = blank_store()\nstore = st.session_state.pm_store\n',
+                  ')\nfrom usb_runtime import initialise_page, persist\n\nst.set_page_config(page_title="Contacts & Suppliers", page_icon="📇", layout="wide")\n_vault, store = initialise_page()\n'
+              ),
+          }
+          for path, (old, new) in pages.items():
+              replace(path, old, new)
+          PY
+
+      - name: Commit wiring
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py pages/
+          git commit -m "Wire Streamlit pages to Engineering Vault runtime"
+          git push
