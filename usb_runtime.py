@@ -4,6 +4,7 @@ import streamlit as st
 from usb_storage import (find_vaults, load_from_vault, save_to_vault, create_backup, backup_due, vault_status, vault_is_connected, list_backups, validate_backup, restore_backup, safe_eject, encryption_enabled, encryption_metadata)
 from usb_security import status as security_status, verify_pin
 from usb_crypto import derive_key
+from usb_session import open_session_protection
 
 
 def _cipher():
@@ -17,6 +18,7 @@ def current_encryption_key():
 def _lock():
     st.session_state.usb_security_unlocked = False
     st.session_state.pop("usb_cipher", None)
+    st.session_state.pop("usb_session_protected", None)
 
 
 def _unlock_if_required(vault):
@@ -69,6 +71,15 @@ def require_vault():
             st.session_state.usb_vault_missing = False
         except Exception as exc:
             st.error(f"Engineering Vault could not be loaded: {exc}")
+            st.stop()
+    if not st.session_state.get("usb_session_protected"):
+        try:
+            protection = open_session_protection(vault, st.session_state.pm_store, _cipher())
+            st.session_state.usb_session_protected = True
+            st.session_state.usb_session_open_backup = protection.get("session_backup", "")
+            st.session_state.usb_startup_integrity = protection.get("integrity", {})
+        except Exception as exc:
+            st.error(f"Startup integrity protection failed: {exc}")
             st.stop()
     return vault, st.session_state.pm_store
 
@@ -142,6 +153,9 @@ def vault_sidebar(vault):
     st.sidebar.caption("Physical vault identity: VERIFIED")
     st.sidebar.caption("PIN lock: ON" if sec.get("pin_enabled") else "PIN lock: OFF")
     st.sidebar.caption("At-rest encryption: ON" if enc.get("enabled") else "At-rest encryption: OFF")
+    if st.session_state.get("usb_session_protected"):
+        st.sidebar.caption("Startup integrity: PASS")
+        st.sidebar.caption("Session-open backup: CREATED")
     _vault_monitor(vault)
     if sec.get("pin_enabled") and st.sidebar.button("Lock Engineering System", use_container_width=True):
         _lock()
