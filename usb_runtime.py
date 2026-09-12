@@ -10,6 +10,10 @@ def _cipher():
     return st.session_state.get("usb_cipher")
 
 
+def current_encryption_key():
+    return _cipher()
+
+
 def _lock():
     st.session_state.usb_security_unlocked = False
     st.session_state.pop("usb_cipher", None)
