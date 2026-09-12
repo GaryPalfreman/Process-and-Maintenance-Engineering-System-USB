@@ -14,15 +14,11 @@ def _record(record_type, title):
     return record
 
 
-def run_persistence_self_test(vault, live_store):
-    """Write/read/verify four linked module records, then restore original data.
-
-    A diagnostic backup is created before the test. The live store supplied by
-    Streamlit is never mutated; a deepcopy is written to the vault temporarily.
-    """
+def run_persistence_self_test(vault, live_store, encryption_key=None):
+    """Write/read/verify four linked module records, then restore original data."""
     original = deepcopy(live_store)
     test_store = deepcopy(live_store)
-    safety = create_backup(vault, original, "pre_self_test")
+    safety = create_backup(vault, original, "pre_self_test", encryption_key)
     created = {}
     results = []
 
@@ -57,8 +53,8 @@ def run_persistence_self_test(vault, live_store):
         test_store.setdefault("pm_schedules", []).append(pm)
         created["pm_schedules"] = pm["system_uuid"]
 
-        save_to_vault(vault, test_store)
-        reloaded = load_from_vault(vault)
+        save_to_vault(vault, test_store, encryption_key)
+        reloaded = load_from_vault(vault, encryption_key)
 
         for module, uid in created.items():
             found = next((r for r in reloaded.get(module, []) if r.get("system_uuid") == uid), None)
@@ -84,4 +80,4 @@ def run_persistence_self_test(vault, live_store):
             "message": "Persistence self-test passed." if passed else "Persistence self-test found a problem.",
         }
     finally:
-        save_to_vault(vault, original)
+        save_to_vault(vault, original, encryption_key)
