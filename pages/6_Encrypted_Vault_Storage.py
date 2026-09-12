@@ -3,6 +3,7 @@ import streamlit as st
 from usb_runtime import initialise_page, current_encryption_key
 from usb_storage import encryption_status, migrate_to_encrypted, list_backups, validate_backup
 from usb_security import status as security_status, verify_pin
+from usb_diagnostics import run_persistence_self_test
 
 st.set_page_config(page_title="Encrypted Vault Storage", page_icon="🔐", layout="wide")
 vault, store = initialise_page()
@@ -25,6 +26,19 @@ if enc.get("enabled"):
     else:
         st.success("No plaintext structured dataset or legacy PMES ZIP backups detected.")
     st.info("Documents remain normal cross-platform files in v0.6 and are not changed by structured-data encryption.")
+
+    st.subheader("Encrypted persistence verification")
+    st.write("Runs the linked Assets → Actions → Maintenance → PM test through the encrypted live-data format, then restores the original dataset.")
+    if st.button("Run Encrypted Persistence Test", type="primary", use_container_width=True):
+        try:
+            with st.spinner("Testing encrypted write/read persistence..."):
+                result = run_persistence_self_test(vault, store, current_encryption_key())
+            if result.get("passed"):
+                st.success("PASS — encrypted write/read persistence and linked UUID relationships verified.")
+            else:
+                st.error("FAIL — encrypted persistence test found a problem.")
+        except Exception as exc:
+            st.error(f"Encrypted persistence test could not complete: {exc}")
 else:
     if not sec.get("pin_enabled"):
         st.warning("Configure a vault PIN/password first, then return here to enable encrypted storage.")
