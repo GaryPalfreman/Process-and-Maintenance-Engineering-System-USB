@@ -5,6 +5,7 @@ from usb_storage import (find_vaults, load_from_vault, save_to_vault, create_bac
 from usb_security import status as security_status, verify_pin
 from usb_crypto import derive_key
 from usb_session import open_session_protection
+from usb_recovery import recovery_status, unwrap_data_key
 
 
 def _cipher():
@@ -50,6 +51,24 @@ def _unlock_if_required(vault):
                 st.error("Vault access was verified, but encrypted storage could not be opened. Do not alter the drive.")
         else:
             st.error("Incorrect vault PIN/password.")
+
+    if encrypted and recovery_status(vault).get("verified"):
+        with st.expander("Emergency recovery key", expanded=False):
+            st.caption("Use this only if the normal PIN/password is unavailable. The recovery key is not stored in readable form on the vault.")
+            with st.form("vault_recovery_unlock"):
+                token = st.text_input("Recovery key", type="password")
+                recover = st.form_submit_button("Unlock with Recovery Key", use_container_width=True)
+            if recover:
+                try:
+                    cipher = unwrap_data_key(vault, token.strip())
+                    load_from_vault(vault, cipher)
+                    st.session_state.usb_cipher = cipher
+                    st.session_state.usb_security_unlocked = True
+                    st.session_state.usb_recovery_unlock = True
+                    st.rerun()
+                except Exception:
+                    _lock()
+                    st.error("Recovery key was not accepted.")
     st.stop()
 
 
@@ -156,10 +175,13 @@ def vault_sidebar(vault):
     if st.session_state.get("usb_session_protected"):
         st.sidebar.caption("Startup integrity: PASS")
         st.sidebar.caption("Session-open backup: CREATED")
+    if st.session_state.get("usb_recovery_unlock"):
+        st.sidebar.warning("Session opened with emergency recovery key")
     _vault_monitor(vault)
     if sec.get("pin_enabled") and st.sidebar.button("Lock Engineering System", use_container_width=True):
         _lock()
         st.session_state.pop("pm_store", None)
+        st.session_state.pop("usb_recovery_unlock", None)
         st.rerun()
     if st.sidebar.button("Save to Engineering Vault", use_container_width=True):
         persist()
@@ -177,6 +199,7 @@ def vault_sidebar(vault):
             safety=create_backup(vault,st.session_state.pm_store,"session_close",_cipher())
             ok,message=safe_eject(vault)
             _lock()
+            st.session_state.pop("usb_recovery_unlock", None)
             if ok:
                 st.session_state.pop("pm_store",None)
                 st.session_state.pop("usb_vault_path",None)
