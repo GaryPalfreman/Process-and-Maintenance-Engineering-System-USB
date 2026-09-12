@@ -2,14 +2,17 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 from engineering_system import *
+from usb_runtime import initialise_page, persist
 
-st.set_page_config(page_title="Process and Maintenance Engineering System", page_icon="🛠️", layout="wide")
+st.set_page_config(page_title="Process and Maintenance Engineering System USB", page_icon="🛠️", layout="wide")
 st.markdown("<style>.block-container{max-width:1500px;padding-top:1rem}div[data-testid='stMetric']{border:1px solid #7774;border-radius:12px;padding:10px}</style>",unsafe_allow_html=True)
-if "pm_store" not in st.session_state: st.session_state.pm_store=blank_store()
-store=st.session_state.pm_store
+_vault, store = initialise_page()
 
 def opts(module): return {record_label(r):r.get("system_uuid") for r in store.get(module,[])}
-def add(module,r): store[module].append(r); st.rerun()
+def add(module,r):
+    store[module].append(r)
+    persist(store)
+    st.rerun()
 def ids(prefix):
     c=st.columns(3); return c[0].text_input("Current / business ID (optional)",key=prefix+"_bid"),c[1].text_input("Legacy ID (optional)",key=prefix+"_lid"),c[2].text_input("Alias / alternate ID",key=prefix+"_alias")
 def table(rows,msg="No records yet."):
@@ -26,7 +29,7 @@ with st.sidebar:
         try:
             key=f"{up.name}:{len(up.getvalue())}"
             if st.session_state.get("loaded_key")!=key:
-                st.session_state.pm_store=load_store(up.getvalue()); st.session_state.loaded_key=key; st.rerun()
+                st.session_state.pm_store=load_store(up.getvalue()); store=st.session_state.pm_store; persist(store); st.session_state.loaded_key=key; st.rerun()
         except Exception as e: st.error(f"Could not load file: {e}")
 
 st.title("Process and Maintenance Engineering System")

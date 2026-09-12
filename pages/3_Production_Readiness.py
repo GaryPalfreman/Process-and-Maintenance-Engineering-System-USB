@@ -4,11 +4,10 @@ import streamlit as st
 
 from engineering_system import blank_store, by_uuid, record_label, asset_label_by_uuid, backup_zip, load_store
 from production_readiness import *
+from usb_runtime import initialise_page, persist
 
 st.set_page_config(page_title="Production Readiness", page_icon="✅", layout="wide")
-if "pm_store" not in st.session_state:
-    st.session_state.pm_store=blank_store()
-store=st.session_state.pm_store
+_vault, store = initialise_page()
 ensure_readiness_collections(store)
 
 if "readiness_snapshot" not in st.session_state:

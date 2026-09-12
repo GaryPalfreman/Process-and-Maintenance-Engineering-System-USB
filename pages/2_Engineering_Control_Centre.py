@@ -5,11 +5,10 @@ import streamlit as st
 from engineering_system import blank_store, by_uuid, record_label, asset_label_by_uuid, pm_status
 from next_layer import create_rca_from_breakdown
 from control_centre import *
+from usb_runtime import initialise_page, persist
 
 st.set_page_config(page_title="Engineering Control Centre", page_icon="🧭", layout="wide")
-if "pm_store" not in st.session_state:
-    st.session_state.pm_store=blank_store()
-store=st.session_state.pm_store
+_vault, store = initialise_page()
 ensure_control_collections(store)
 
 def options(module): return {record_label(r):r.get("system_uuid") for r in store.get(module,[])}

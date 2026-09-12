@@ -10,11 +10,10 @@ from supplier_contacts import (
     set_company_status, archive_record, relationships_for_target, company_performance,
     directory_rows, search_directory
 )
+from usb_runtime import initialise_page, persist
 
 st.set_page_config(page_title="Contacts & Suppliers", page_icon="📇", layout="wide")
-if "pm_store" not in st.session_state:
-    st.session_state.pm_store = blank_store()
-store = st.session_state.pm_store
+_vault, store = initialise_page()
 ensure_supplier_collections(store)
 
 

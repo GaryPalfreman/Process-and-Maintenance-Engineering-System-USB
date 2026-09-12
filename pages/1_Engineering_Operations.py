@@ -11,11 +11,10 @@ from advanced_operations import (
     checklist_items, apply_pm_completion_details, downtime_pareto, recurring_failures,
     maintenance_cost_summary, MAINTENANCE_PACKS, seed_maintenance_pack,
 )
+from usb_runtime import initialise_page, persist
 
 st.set_page_config(page_title="Engineering Operations", page_icon="🔧", layout="wide")
-if "pm_store" not in st.session_state:
-    st.session_state.pm_store = blank_store()
-store = st.session_state.pm_store
+_vault, store = initialise_page()
 store.setdefault("pm_templates", [])
 
 
