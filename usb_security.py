@@ -71,6 +71,21 @@ def verify_pin(vault, pin):
     return hmac.compare_digest(candidate, config.get("pin_hash", ""))
 
 
+def _set_pin_verifier(vault, new_pin):
+    if not new_pin:
+        raise ValueError("Encrypted vaults require a non-empty PIN/password")
+    config = json.loads(security_file(vault).read_text(encoding="utf-8"))
+    salt = secrets.token_bytes(16)
+    config.update({
+        "pin_enabled": True,
+        "salt": base64.b64encode(salt).decode(),
+        "pin_hash": _hash_pin(new_pin, salt),
+        "iterations": ITERATIONS,
+        "pin_changed_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    _write(security_file(vault), config)
+
+
 def change_pin(vault, current_pin, new_pin):
     if not verify_pin(vault, current_pin): raise ValueError("Current PIN/password is incorrect")
     config = json.loads(security_file(vault).read_text(encoding="utf-8"))
