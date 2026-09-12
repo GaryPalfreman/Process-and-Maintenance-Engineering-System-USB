@@ -11,9 +11,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from engineering_system import blank_store, load_store, store_bytes, backup_zip
+from usb_crypto import new_encryption_metadata, derive_key, encrypt_bytes, decrypt_bytes, atomic_write
 
 VAULT_FOLDER = "ENGINEERING_SYSTEM"
 DATA_FILE = "engineering_data.json"
+ENCRYPTED_DATA_FILE = "engineering_data.pmes"
+ENCRYPTION_FILE = "vault_encryption.json"
 MARKER_FILE = "vault_identity.json"
 AUTO_BACKUP_MINUTES = 30
 BACKUP_JSON = "Process_Maintenance_Engineering_System.json"
@@ -107,28 +110,63 @@ def initialise_vault(root, label="Engineering Vault"):
     return p
 
 
-def load_from_vault(vault):
+def encryption_metadata(vault):
+    path = vault_path(vault) / ENCRYPTION_FILE
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("schema") != "pmes-encryption-v1":
+        raise ValueError("Unsupported Engineering Vault encryption metadata")
+    return data
+
+
+def encryption_enabled(vault):
+    return encryption_metadata(vault) is not None
+
+
+def encryption_status(vault):
+    p = vault_path(vault)
+    enabled = encryption_enabled(p)
+    return {
+        "enabled": enabled,
+        "encrypted_data_present": (p / ENCRYPTED_DATA_FILE).exists(),
+        "plaintext_data_present": (p / DATA_FILE).exists(),
+        "legacy_plaintext_backups": len(list((p / "Backups").rglob("PMES_*.zip"))) if (p / "Backups").exists() else 0,
+        "encrypted_backups": len(list((p / "Backups").rglob("PMES_*.pmesbak"))) if (p / "Backups").exists() else 0,
+    }
+
+
+def load_from_vault(vault, encryption_key=None):
     p = vault_path(vault)
     read_identity(p)
+    if encryption_enabled(p):
+        if not encryption_key:
+            raise PermissionError("Encrypted Engineering Vault is locked")
+        data_file = p / ENCRYPTED_DATA_FILE
+        if not data_file.exists():
+            raise FileNotFoundError(f"Missing {ENCRYPTED_DATA_FILE}")
+        plain = decrypt_bytes(data_file.read_bytes(), encryption_key, b"PMES-LIVE-DATA")
+        return load_store(plain)
     data_file = p / DATA_FILE
     if not data_file.exists():
         raise FileNotFoundError(f"Missing {DATA_FILE}")
     return load_store(data_file.read_bytes())
 
 
-def save_to_vault(vault, store):
+def save_to_vault(vault, store, encryption_key=None):
     p = vault_path(vault)
     if not vault_is_connected(p):
         raise RuntimeError("Engineering Vault is not connected. Write blocked.")
     read_identity(p)
-    target = p / DATA_FILE
-    temp = p / (DATA_FILE + ".tmp")
     payload = store_bytes(store)
-    with open(temp, "wb") as handle:
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temp, target)
+    if encryption_enabled(p):
+        if not encryption_key:
+            raise PermissionError("Encrypted Engineering Vault is locked")
+        target = p / ENCRYPTED_DATA_FILE
+        atomic_write(target, encrypt_bytes(payload, encryption_key, b"PMES-LIVE-DATA"))
+        return target
+    target = p / DATA_FILE
+    atomic_write(target, payload)
     return target
 
 
@@ -136,7 +174,11 @@ def _sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def create_backup(vault, store, reason="manual"):
+def _write_checksum(path, payload):
+    path.with_suffix(path.suffix + ".sha256").write_text(_sha256_bytes(payload) + "\n", encoding="utf-8")
+
+
+def create_backup(vault, store, reason="manual", encryption_key=None):
     p = vault_path(vault)
     if not vault_is_connected(p):
         raise RuntimeError("Engineering Vault is not connected. Backup blocked.")
@@ -144,11 +186,17 @@ def create_backup(vault, store, reason="manual"):
     now = datetime.now().replace(microsecond=0)
     folder = p / "Backups" / now.strftime("%Y-%m")
     folder.mkdir(parents=True, exist_ok=True)
-    target = folder / f"PMES_{now.strftime('%Y%m%d_%H%M%S')}_{reason}.zip"
-    payload = backup_zip(store)
-    target.write_bytes(payload)
-    checksum = _sha256_bytes(payload)
-    target.with_suffix(target.suffix + ".sha256").write_text(checksum + "\n", encoding="utf-8")
+    plain_payload = backup_zip(store)
+    if encryption_enabled(p):
+        if not encryption_key:
+            raise PermissionError("Encrypted Engineering Vault is locked")
+        target = folder / f"PMES_{now.strftime('%Y%m%d_%H%M%S')}_{reason}.pmesbak"
+        payload = encrypt_bytes(plain_payload, encryption_key, b"PMES-BACKUP")
+    else:
+        target = folder / f"PMES_{now.strftime('%Y%m%d_%H%M%S')}_{reason}.zip"
+        payload = plain_payload
+    atomic_write(target, payload)
+    _write_checksum(target, payload)
     (p / "Backups" / ".last_backup").write_text(now.isoformat(), encoding="utf-8")
     return target
 
@@ -166,13 +214,13 @@ def list_backups(vault, limit=50):
     root = vault_path(vault) / "Backups"
     if not root.exists():
         return []
-    files = [p for p in root.rglob("PMES_*.zip") if p.is_file()]
+    files = [p for p in root.rglob("PMES_*.*") if p.is_file() and p.suffix in {".zip", ".pmesbak"}]
     return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
 
 
-def validate_backup(path):
+def validate_backup(path, encryption_key=None):
     path = Path(path)
-    result = {"valid": False, "path": str(path), "checksum_ok": None, "error": ""}
+    result = {"valid": False, "path": str(path), "checksum_ok": None, "encrypted": path.suffix == ".pmesbak", "error": ""}
     try:
         payload = path.read_bytes()
         sidecar = path.with_suffix(path.suffix + ".sha256")
@@ -180,28 +228,94 @@ def validate_backup(path):
             result["checksum_ok"] = sidecar.read_text(encoding="utf-8").strip() == _sha256_bytes(payload)
             if not result["checksum_ok"]:
                 raise ValueError("Backup checksum mismatch")
+        if path.suffix == ".pmesbak":
+            if not encryption_key:
+                raise PermissionError("Encrypted backup requires an unlocked vault")
+            payload = decrypt_bytes(payload, encryption_key, b"PMES-BACKUP")
         with zipfile.ZipFile(io.BytesIO(payload), "r") as zf:
             if BACKUP_JSON not in zf.namelist():
                 raise ValueError("Backup JSON is missing")
             store = load_store(zf.read(BACKUP_JSON))
         result["valid"] = True
-        result["records"] = sum(len(v) for k, v in store.items() if isinstance(v, list))
+        result["records"] = sum(len(v) for v in store.values() if isinstance(v, list))
     except Exception as exc:
         result["error"] = str(exc)
     return result
 
 
-def restore_backup(vault, backup_path):
+def restore_backup(vault, backup_path, encryption_key=None):
     p = vault_path(vault)
-    check = validate_backup(backup_path)
+    check = validate_backup(backup_path, encryption_key)
     if not check.get("valid"):
         raise ValueError(check.get("error") or "Backup validation failed")
-    current = load_from_vault(p)
-    safety = create_backup(p, current, "pre_restore")
-    with zipfile.ZipFile(backup_path, "r") as zf:
+    current = load_from_vault(p, encryption_key)
+    safety = create_backup(p, current, "pre_restore", encryption_key)
+    payload = Path(backup_path).read_bytes()
+    if Path(backup_path).suffix == ".pmesbak":
+        payload = decrypt_bytes(payload, encryption_key, b"PMES-BACKUP")
+    with zipfile.ZipFile(io.BytesIO(payload), "r") as zf:
         restored = load_store(zf.read(BACKUP_JSON))
-    save_to_vault(p, restored)
+    save_to_vault(p, restored, encryption_key)
     return restored, safety
+
+
+def _encrypt_existing_backup(path, key):
+    path = Path(path)
+    check = validate_backup(path)
+    if not check.get("valid"):
+        raise ValueError(f"Cannot migrate invalid backup {path.name}: {check.get('error')}")
+    plain = path.read_bytes()
+    encrypted = encrypt_bytes(plain, key, b"PMES-BACKUP")
+    target = path.with_suffix(".pmesbak")
+    atomic_write(target, encrypted)
+    _write_checksum(target, encrypted)
+    verify = validate_backup(target, key)
+    if not verify.get("valid"):
+        target.unlink(missing_ok=True)
+        target.with_suffix(target.suffix + ".sha256").unlink(missing_ok=True)
+        raise ValueError(f"Encrypted backup verification failed for {path.name}")
+    path.unlink()
+    path.with_suffix(path.suffix + ".sha256").unlink(missing_ok=True)
+    return target
+
+
+def migrate_to_encrypted(vault, store, pin):
+    """Safely migrate plaintext live data and PMES backup ZIPs to encrypted storage."""
+    p = vault_path(vault)
+    if encryption_enabled(p):
+        raise ValueError("Engineering Vault encryption is already enabled")
+    if not pin:
+        raise ValueError("A vault PIN/password is required before enabling encryption")
+
+    safety = create_backup(p, store, "pre_encryption")
+    check = validate_backup(safety)
+    if not check.get("valid"):
+        raise ValueError("Pre-encryption safety backup failed validation")
+
+    metadata = new_encryption_metadata()
+    key = derive_key(pin, metadata)
+    encrypted_live = encrypt_bytes(store_bytes(store), key, b"PMES-LIVE-DATA")
+    live_target = p / ENCRYPTED_DATA_FILE
+    atomic_write(live_target, encrypted_live)
+    test_store = load_store(decrypt_bytes(live_target.read_bytes(), key, b"PMES-LIVE-DATA"))
+    if test_store.get("schema") != store.get("schema"):
+        live_target.unlink(missing_ok=True)
+        raise ValueError("Encrypted live-data verification failed")
+
+    meta_path = p / ENCRYPTION_FILE
+    meta_temp = meta_path.with_suffix(".json.tmp")
+    meta_temp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    os.replace(meta_temp, meta_path)
+
+    migrated = []
+    for legacy in sorted((p / "Backups").rglob("PMES_*.zip")):
+        migrated.append(_encrypt_existing_backup(legacy, key))
+
+    (p / DATA_FILE).unlink(missing_ok=True)
+    final = load_from_vault(p, key)
+    if final.get("schema") != store.get("schema"):
+        raise ValueError("Encrypted vault final verification failed")
+    return {"key": key, "encrypted_live": str(live_target), "migrated_backups": len(migrated)}
 
 
 def safe_eject(vault):
@@ -235,10 +349,12 @@ def vault_status(vault):
     p = vault_path(vault)
     identity = read_identity(p)
     usage = shutil.disk_usage(p)
+    enc = encryption_status(p)
     return {
         "label": identity.get("label", "Engineering Vault"),
         "vault_id": identity.get("vault_id", ""),
         "path": str(p),
         "free_bytes": usage.free,
         "total_bytes": usage.total,
+        "encryption": enc,
     }
