@@ -10,6 +10,15 @@ import streamlit as st
 from usb_storage import find_vaults, load_from_vault, save_to_vault, create_backup, backup_due, vault_status
 
 
+def _plain(value):
+    """Return ordinary dict/list data without triggering observable callbacks."""
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in dict.items(value)}
+    if isinstance(value, list):
+        return [_plain(item) for item in list.__iter__(value)]
+    return value
+
+
 class _VaultController:
     def __init__(self, vault):
         self.vault = Path(vault)
@@ -19,10 +28,15 @@ class _VaultController:
     def changed(self):
         if self.suspended or self.root is None:
             return
-        save_to_vault(self.vault, self.root)
-        if backup_due(self.vault):
-            create_backup(self.vault, self.root, "auto")
-        st.session_state.usb_dirty = False
+        self.suspended = True
+        try:
+            payload = _plain(self.root)
+            save_to_vault(self.vault, payload)
+            if backup_due(self.vault):
+                create_backup(self.vault, payload, "auto")
+            st.session_state.usb_dirty = False
+        finally:
+            self.suspended = False
 
 
 class VaultDict(dict):
@@ -185,7 +199,7 @@ def persist(store=None, backup=True):
         st.error("Engineering Vault is no longer available. Reconnect it before continuing.")
         st.stop()
     vault = Path(vaults[0])
-    data = store if store is not None else st.session_state.pm_store
+    data = _plain(store if store is not None else st.session_state.pm_store)
     save_to_vault(vault, data)
     if backup and backup_due(vault):
         create_backup(vault, data, "auto")
@@ -206,7 +220,7 @@ def vault_sidebar(vault):
         persist()
         st.sidebar.success("Saved")
     if st.sidebar.button("Create Vault Backup", use_container_width=True):
-        target = create_backup(vault, st.session_state.pm_store, "manual")
+        target = create_backup(vault, _plain(st.session_state.pm_store), "manual")
         st.sidebar.success(f"Backup created: {target.name}")
 
 
