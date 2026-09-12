@@ -5,3 +5,4 @@ cryptography
 PyPDF2>=3.0,<4
 fpdf2>=2.7,<3
 Pillow>=10,<13
+qrcode>=7.4,<9
