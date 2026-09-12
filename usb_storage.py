@@ -16,11 +16,19 @@ AUTO_BACKUP_MINUTES = 30
 
 def removable_roots():
     roots = []
-    if platform.system() == "Darwin":
+    system = platform.system()
+    if system == "Darwin":
         base = Path("/Volumes")
         if base.exists():
-            roots = [p for p in base.iterdir() if p.is_dir()]
-    elif platform.system() == "Windows":
+            for p in base.iterdir():
+                if not p.is_dir():
+                    continue
+                # Exclude the internal startup volume and Time Machine helper mounts.
+                if p.name in {"Macintosh HD", "Macintosh HD - Data"} or p.name.startswith(".timemachine"):
+                    continue
+                roots.append(p)
+    elif system == "Windows":
+        # Do not depend on a particular drive letter. The vault marker identifies the drive.
         for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
             p = Path(f"{letter}:\\")
             if p.exists():
@@ -38,12 +46,25 @@ def vault_path(root):
     return p if p.name == VAULT_FOLDER else p / VAULT_FOLDER
 
 
+def read_identity(vault):
+    p = vault_path(vault)
+    identity = json.loads((p / MARKER_FILE).read_text(encoding="utf-8"))
+    if identity.get("schema") != "pmes-usb-vault" or not identity.get("vault_id"):
+        raise ValueError("Invalid Engineering Vault identity")
+    return identity
+
+
 def find_vaults():
     found = []
     for root in removable_roots():
         p = vault_path(root)
-        if (p / MARKER_FILE).exists():
+        if not (p / MARKER_FILE).exists():
+            continue
+        try:
+            read_identity(p)
             found.append(p)
+        except Exception:
+            continue
     return found
 
 
@@ -65,20 +86,30 @@ def initialise_vault(root, label="Engineering Vault"):
 
 def load_from_vault(vault):
     p = vault_path(vault)
-    return load_store((p / DATA_FILE).read_bytes())
+    read_identity(p)
+    data_file = p / DATA_FILE
+    if not data_file.exists():
+        raise FileNotFoundError(f"Missing {DATA_FILE}")
+    return load_store(data_file.read_bytes())
 
 
 def save_to_vault(vault, store):
     p = vault_path(vault)
+    read_identity(p)
     target = p / DATA_FILE
     temp = p / (DATA_FILE + ".tmp")
-    temp.write_bytes(store_bytes(store))
+    payload = store_bytes(store)
+    with open(temp, "wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temp, target)
     return target
 
 
 def create_backup(vault, store, reason="manual"):
     p = vault_path(vault)
+    read_identity(p)
     now = datetime.now().replace(microsecond=0)
     folder = p / "Backups" / now.strftime("%Y-%m")
     folder.mkdir(parents=True, exist_ok=True)
@@ -99,7 +130,7 @@ def backup_due(vault, minutes=AUTO_BACKUP_MINUTES):
 
 def vault_status(vault):
     p = vault_path(vault)
-    identity = json.loads((p / MARKER_FILE).read_text(encoding="utf-8"))
+    identity = read_identity(p)
     usage = shutil.disk_usage(p)
     return {
         "label": identity.get("label", "Engineering Vault"),
