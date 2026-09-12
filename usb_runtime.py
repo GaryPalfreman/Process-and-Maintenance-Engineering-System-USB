@@ -1,11 +1,13 @@
 """Shared local USB/HDD runtime for the Streamlit edition."""
 from pathlib import Path
+import platform
 import streamlit as st
 from usb_storage import (find_vaults, load_from_vault, save_to_vault, create_backup, backup_due, vault_status, vault_is_connected, list_backups, validate_backup, restore_backup, safe_eject, encryption_enabled, encryption_metadata)
 from usb_security import status as security_status, verify_pin
 from usb_crypto import derive_key
 from usb_session import open_session_protection
 from usb_recovery import recovery_status, unwrap_data_key
+from usb_linux import safe_eject_linux
 
 
 def _cipher():
@@ -197,7 +199,10 @@ def vault_sidebar(vault):
         if st.button("Save, Backup & Safely Eject",disabled=not confirm,use_container_width=True):
             persist(backup=False)
             safety=create_backup(vault,st.session_state.pm_store,"session_close",_cipher())
-            ok,message=safe_eject(vault)
+            if platform.system() == "Linux":
+                ok,message=safe_eject_linux(vault)
+            else:
+                ok,message=safe_eject(vault)
             _lock()
             st.session_state.pop("usb_recovery_unlock", None)
             if ok:
