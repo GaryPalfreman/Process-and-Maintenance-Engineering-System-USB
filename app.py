@@ -29,7 +29,7 @@ with st.sidebar:
         try:
             key=f"{up.name}:{len(up.getvalue())}"
             if st.session_state.get("loaded_key")!=key:
-                st.session_state.pm_store=load_store(up.getvalue()); store=st.session_state.pm_store; persist(store); st.session_state.loaded_key=key; st.rerun()
+                st.session_state.pm_store=load_store(up.getvalue()); store=st.session_state.pm_store; persist(store); st.session_state.loaded_key=key; persist(store); st.rerun()
         except Exception as e: st.error(f"Could not load file: {e}")
 
 st.title("Process and Maintenance Engineering System")

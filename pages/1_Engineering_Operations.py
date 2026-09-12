@@ -128,6 +128,7 @@ with tabs[2]:
                 maint,nxt=complete_pm(store,uid,completed,technician,notes,hours,parts_text)
                 apply_pm_completion_details(store,maint["system_uuid"],results,rate,external,consumption)
                 st.success(f"PM completed. Next due: {nxt.isoformat() if nxt else 'manual scheduling required'}")
+                persist(store)
                 st.rerun()
 
 with tabs[3]:
@@ -141,6 +142,7 @@ with tabs[3]:
         if st.button("Add Standard Pack Templates",use_container_width=True):
             created=seed_maintenance_pack(store,pack_class,owner)
             st.success(f"Added {len(created)} new template(s). Existing matching templates were not duplicated.")
+            persist(store)
             st.rerun()
     with c2:
         st.markdown("#### Pack preview")
@@ -160,7 +162,7 @@ with tabs[3]:
             template=by_uuid(store["pm_templates"])[tmap[t]]; machine=by_uuid(store["assets"])[amap[asset]]
             if template.get("asset_class") and machine.get("asset_class") and template.get("asset_class")!=machine.get("asset_class"):
                 st.warning(f"Template class is {template.get('asset_class')} but selected asset is {machine.get('asset_class')}. Schedule created as requested.")
-            create_pm_from_template(store,tmap[t],amap[asset],due,own); st.success("PM schedule created."); st.rerun()
+            create_pm_from_template(store,tmap[t],amap[asset],due,own); st.success("PM schedule created."); persist(store); st.rerun()
 
 with tabs[4]:
     st.subheader("Breakdown Follow-up")
@@ -175,14 +177,14 @@ with tabs[4]:
         st.write("**Symptoms:**",r.get("symptom","")); st.write("**Diagnosis:**",r.get("diagnosis","")); st.write("**Work completed:**",r.get("action_taken",""))
         failure=st.text_input("Failure category / recurring-failure tag",r.get("failure_category",""),key="failure_category")
         if st.button("Save Failure Category"):
-            update_record(store,"maintenance",uid,{"failure_category":failure}); st.rerun()
+            update_record(store,"maintenance",uid,{"failure_category":failure}); persist(store); st.rerun()
         a,b=st.columns(2)
         with a:
             owner=st.text_input("Action owner",r.get("owner",""),key="bd_action_owner"); due=st.date_input("Action due",date.today()+timedelta(days=7),key="bd_action_due")
-            if st.button("Create Linked Engineering Action",use_container_width=True): create_action_from_breakdown(store,uid,owner,due); st.success("Engineering action created and linked."); st.rerun()
+            if st.button("Create Linked Engineering Action",use_container_width=True): create_action_from_breakdown(store,uid,owner,due); st.success("Engineering action created and linked."); persist(store); st.rerun()
         with b:
             rca_owner=st.text_input("RCA owner",r.get("owner",""),key="bd_rca_owner")
-            if st.button("Create Linked RCA",use_container_width=True): create_rca_from_breakdown(store,uid,rca_owner); st.success("RCA created and linked."); st.rerun()
+            if st.button("Create Linked RCA",use_container_width=True): create_rca_from_breakdown(store,uid,rca_owner); st.success("RCA created and linked."); persist(store); st.rerun()
 
 with tabs[5]:
     st.subheader("Spare Parts Stock Control")
@@ -197,7 +199,7 @@ with tabs[5]:
             a=st.columns(4)
             qty=a[0].number_input("Quantity on hand",0.0,step=1.0,value=float(s.get("quantity_on_hand",0) or 0)); minimum=a[1].number_input("Minimum stock",0.0,step=1.0,value=float(s.get("minimum_stock",0) or 0)); unit=a[2].number_input("Unit cost $",0.0,step=1.0,value=float(s.get("unit_cost",s.get("cost",0)) or 0)); location=a[3].text_input("Storage location",s.get("storage_location","")); save=st.form_submit_button("Save Stock Details")
         if save:
-            update_record(store,"spares",uid,{"quantity_on_hand":float(qty),"minimum_stock":float(minimum),"unit_cost":float(unit),"storage_location":location}); st.rerun()
+            update_record(store,"spares",uid,{"quantity_on_hand":float(qty),"minimum_stock":float(minimum),"unit_cost":float(unit),"storage_location":location}); persist(store); st.rerun()
 
 with tabs[6]:
     st.subheader("Maintenance Cost & Reliability Analysis")
@@ -230,5 +232,5 @@ with tabs[7]:
             title=a[0].text_input("Title / name",r.get("title","")); dept=a[1].text_input("Department",r.get("department","")); business=a[2].text_input("Business / current ID",r.get("business_id",""))
             b=st.columns(2); legacy=b[0].text_input("Legacy ID",r.get("legacy_id","")); alias=b[1].text_input("Alias",r.get("alias","")); save=st.form_submit_button("Save Record Identity",use_container_width=True)
         if save:
-            update_record(store,module,uid,{"title":title,"department":dept,"business_id":business,"legacy_id":legacy,"alias":alias}); st.success("Record updated."); st.rerun()
+            update_record(store,module,uid,{"title":title,"department":dept,"business_id":business,"legacy_id":legacy,"alias":alias}); st.success("Record updated."); persist(store); st.rerun()
         st.caption(f"System UUID: {uid}"); st.json(r,expanded=False)

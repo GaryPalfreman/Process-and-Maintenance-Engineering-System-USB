@@ -70,7 +70,7 @@ with tabs[1]:
     if submit:
         if not title.strip(): st.error("A short title is required.")
         else:
-            save_snapshot(); create_quick_capture(store,typ,title,notes,dept,amap.get(asset,""),pri,due); st.success("Captured."); st.rerun()
+            save_snapshot(); create_quick_capture(store,typ,title,notes,dept,amap.get(asset,""),pri,due); st.success("Captured."); persist(store); st.rerun()
 
     st.markdown("#### Engineering Inbox")
     horizon=st.slider("Inbox horizon (days)",1,30,7,key="inbox_horizon")
@@ -84,7 +84,7 @@ with tabs[1]:
             target=st.selectbox("Promote to",["actions","maintenance","trials","research","engineering_changes","engineering_diary"],format_func=lambda x:x.replace("_"," ").title())
             promote=st.form_submit_button("Promote & Link",use_container_width=True)
         if promote:
-            save_snapshot(); promote_capture(store,qmap[item],target); st.success("Item promoted and linked to its source capture."); st.rerun()
+            save_snapshot(); promote_capture(store,qmap[item],target); st.success("Item promoted and linked to its source capture."); persist(store); st.rerun()
 
 with tabs[2]:
     st.subheader("Global Engineering Search")
@@ -131,7 +131,7 @@ with tabs[4]:
     if create:
         if not title.strip(): st.error("Change title is required.")
         else:
-            save_snapshot(); create_engineering_change(store,title,problem,current,proposed,dept,amap.get(asset,""),pmap.get(product,""),owner); st.rerun()
+            save_snapshot(); create_engineering_change(store,title,problem,current,proposed,dept,amap.get(asset,""),pmap.get(product,""),owner); persist(store); st.rerun()
 
     cmap=options("engineering_changes")
     show([{"ID":r.get("business_id",""),"Status":r.get("status",""),"Stage":r.get("stage",""),"Change":r.get("title",""),"Asset":asset_label_by_uuid(store,r.get("asset_uuid","")),"Owner":r.get("owner","")} for r in store.get("engineering_changes",[])],"No engineering changes yet.")
@@ -151,7 +151,7 @@ with tabs[4]:
             standard=st.text_input("Final standard / controlled document reference",r.get("final_standard_reference",""))
             save=st.form_submit_button("Save Engineering Change Progress",use_container_width=True)
         if save:
-            save_snapshot(); r.update({"status":status,"stage":stage,"owner":owner,"risk_assessment":risk,"implementation":implementation,"validation":validation,"before_after_result":result,"final_standard_reference":standard,"updated_at":datetime.now().replace(microsecond=0).isoformat()}); st.rerun()
+            save_snapshot(); r.update({"status":status,"stage":stage,"owner":owner,"risk_assessment":risk,"implementation":implementation,"validation":validation,"before_after_result":result,"final_standard_reference":standard,"updated_at":datetime.now().replace(microsecond=0).isoformat()}); persist(store); st.rerun()
 
 with tabs[5]:
     st.subheader("Engineering Knowledge & Diary")
@@ -162,25 +162,25 @@ with tabs[5]:
             a=st.columns(3); d=a[0].date_input("Date",date.today()); cat=a[1].selectbox("Category",["Engineering","Maintenance","Process","Trial","Supplier","Meeting","Observation","Follow-up"]); asset=a[2].selectbox("Asset",[""]+list(amap),key="dia_asset")
             title=st.text_input("Diary title"); notes=st.text_area("Notes / decisions / observations")
             ok=st.form_submit_button("Add Diary Entry")
-        if ok and title.strip(): save_snapshot(); create_diary_entry(store,title,notes,d,cat,amap.get(asset,"")); st.rerun()
+        if ok and title.strip(): save_snapshot(); create_diary_entry(store,title,notes,d,cat,amap.get(asset,"")); persist(store); st.rerun()
         show([{"Date":r.get("entry_date"),"Category":r.get("category"),"Entry":record_label(r),"Asset":asset_label_by_uuid(store,r.get("asset_uuid","")),"Notes":r.get("notes","")} for r in sorted(store.get("engineering_diary",[]),key=lambda x:x.get("entry_date",""),reverse=True)],"No diary entries.")
     with k2:
         with st.form("decision",clear_on_submit=True):
             title=st.text_input("Decision title"); asset=st.selectbox("Asset",[""]+list(amap),key="dec_asset"); decision=st.text_area("Decision made"); rationale=st.text_area("Why this decision was made"); evidence=st.text_area("Evidence / data"); alternatives=st.text_area("Alternatives considered"); outcome=st.text_area("Outcome / follow-up")
             ok=st.form_submit_button("Record Decision")
-        if ok and title.strip(): save_snapshot(); create_decision(store,title,decision,rationale,evidence,alternatives,outcome,amap.get(asset,"")); st.rerun()
+        if ok and title.strip(): save_snapshot(); create_decision(store,title,decision,rationale,evidence,alternatives,outcome,amap.get(asset,"")); persist(store); st.rerun()
         show([{"Date":r.get("decision_date"),"Decision":record_label(r),"Asset":asset_label_by_uuid(store,r.get("asset_uuid","")),"Status":r.get("status","")} for r in store.get("decisions",[])],"No decisions recorded.")
     with k3:
         with st.form("lesson",clear_on_submit=True):
             title=st.text_input("Lesson title"); asset=st.selectbox("Asset",[""]+list(amap),key="ll_asset"); material=st.text_input("Material"); product=st.text_input("Product / family"); context=st.text_area("Context / what happened"); lesson=st.text_area("Lesson learned"); recommendation=st.text_area("Future recommendation / known issue guidance")
             ok=st.form_submit_button("Save Lesson Learned")
-        if ok and title.strip(): save_snapshot(); create_lesson(store,title,lesson,context,recommendation,amap.get(asset,""),material,product); st.rerun()
+        if ok and title.strip(): save_snapshot(); create_lesson(store,title,lesson,context,recommendation,amap.get(asset,""),material,product); persist(store); st.rerun()
         show([{"Lesson":record_label(r),"Asset":asset_label_by_uuid(store,r.get("asset_uuid","")),"Material":r.get("material",""),"Product":r.get("product",""),"Recommendation":r.get("recommendation","")} for r in store.get("lessons_learned",[])],"No lessons learned yet.")
     with k4:
         with st.form("reference",clear_on_submit=True):
             title=st.text_input("Reference title"); typ=st.selectbox("Type",["Drawing","Manual","Photo","CNC Program","Supplier Document","Calibration","Procedure","Specification","Folder","Web Link","Other"]); asset=st.selectbox("Asset",[""]+list(amap),key="ref_asset"); location=st.text_input("File path / document number / URL / storage location"); desc=st.text_area("Description")
             ok=st.form_submit_button("Add Reference")
-        if ok and title.strip(): save_snapshot(); create_reference(store,title,typ,location,desc,amap.get(asset,"")); st.rerun()
+        if ok and title.strip(): save_snapshot(); create_reference(store,title,typ,location,desc,amap.get(asset,"")); persist(store); st.rerun()
         show([{"Type":r.get("reference_type"),"Reference":record_label(r),"Asset":asset_label_by_uuid(store,r.get("asset_uuid","")),"Location":r.get("location","")} for r in store.get("references",[])],"No references recorded.")
 
 with tabs[6]:
@@ -197,12 +197,12 @@ with tabs[6]:
         c[0].metric("Business ID",r.get("business_id") or "—"); c[1].metric("Lifecycle",r.get("lifecycle",r.get("status","—"))); c[2].metric("Created",str(r.get("created_at",""))[:10] or "—"); c[3].metric("Updated",str(r.get("updated_at",""))[:10] or "—")
         a,b,c=st.columns(3)
         with a:
-            if st.button("Assign Display ID",use_container_width=True): save_snapshot(); assign_display_id(store,module,r); st.rerun()
+            if st.button("Assign Display ID",use_container_width=True): save_snapshot(); assign_display_id(store,module,r); persist(store); st.rerun()
         with b:
             lifecycle=st.selectbox("Lifecycle",["Draft","Active","Complete","Closed","Archived"],key="life")
-            if st.button("Set Lifecycle",use_container_width=True): save_snapshot(); set_lifecycle(store,module,uid,lifecycle); st.rerun()
+            if st.button("Set Lifecycle",use_container_width=True): save_snapshot(); set_lifecycle(store,module,uid,lifecycle); persist(store); st.rerun()
         with c:
-            if st.button("Clone Record",use_container_width=True): save_snapshot(); clone_record(store,module,uid); st.success("Record cloned with a new hidden UUID and display ID."); st.rerun()
+            if st.button("Clone Record",use_container_width=True): save_snapshot(); clone_record(store,module,uid); st.success("Record cloned with a new hidden UUID and display ID."); persist(store); st.rerun()
         st.caption(f"Hidden system UUID: {uid}")
 
 with tabs[7]:
@@ -236,7 +236,7 @@ with tabs[8]:
         if st.button("Create Recovery Snapshot",use_container_width=True): st.session_state.readiness_snapshot=session_snapshot(store); st.success("Recovery snapshot created for this browser session.")
         if st.button("Restore Session Snapshot",use_container_width=True):
             ok,msg,data=validate_restore_bytes(st.session_state.readiness_snapshot)
-            if ok: st.session_state.pm_store=load_store(st.session_state.readiness_snapshot); st.success("Session snapshot restored."); st.rerun()
+            if ok: st.session_state.pm_store=load_store(st.session_state.readiness_snapshot); st.success("Session snapshot restored."); persist(store); st.rerun()
             else: st.error(msg)
     st.markdown("#### Validate a JSON backup before restoring it")
     upload=st.file_uploader("Choose engineering-system JSON",type=["json"],key="validate_backup")

@@ -121,6 +121,7 @@ with tabs[1]:
         else:
             create_company(store, name.strip(), types, status, phone, email, website, address, account, after_hours, capabilities, notes)
             st.success("Company added.")
+            persist(store)
             st.rerun()
 
     rows = []
@@ -160,6 +161,7 @@ with tabs[2]:
             else:
                 create_contact(store, cmap[company_name], name.strip(), role, phone, mobile, email, method, availability, responsibilities, notes)
                 st.success("Contact added.")
+                persist(store)
                 st.rerun()
 
     companies_by_id = by_uuid(store["supplier_companies"])
@@ -199,6 +201,7 @@ with tabs[3]:
             else:
                 create_procedure(store, company_uuid, ptype, title.strip(), pcontacts.get(contact_name, ""), preferred_method, first_step, required, approval, steps, emergency, notes)
                 st.success("Engagement procedure saved.")
+                persist(store)
                 st.rerun()
 
     companies_by_id = by_uuid(store["supplier_companies"])
@@ -237,6 +240,7 @@ with tabs[4]:
             if add:
                 create_relationship(store, company_uuid, module, tmap[target_name], role, conmap.get(contact_name, ""), procmap.get(procedure_name, ""), preferred, notes)
                 st.success("Supplier relationship linked.")
+                persist(store)
                 st.rerun()
 
     companies_by_id = by_uuid(store["supplier_companies"])
@@ -288,6 +292,7 @@ with tabs[5]:
             else:
                 log_supplier_usage(store, company_uuid, usage_type, summary.strip(), used_date, conmap.get(contact_name, ""), module, tmap.get(target_name, "") if module else "", reference, response, cost, result, rating, notes)
                 st.success("Supplier usage logged.")
+                persist(store)
                 st.rerun()
 
         perf = company_performance(store, company_uuid)
@@ -316,12 +321,14 @@ with tabs[6]:
         if st.button("Update Company Status", use_container_width=True):
             set_company_status(store, company_uuid, new_status)
             st.success("Company status updated.")
+            persist(store)
             st.rerun()
         st.caption("Use Preferred / Approved / Alternative / Trial / Do Not Use / Inactive instead of deleting supplier history.")
 
         if st.button("Remove Company from Active Directory (Archive)", use_container_width=True):
             archive_record(store, "supplier_companies", company_uuid, True)
             st.success("Company archived. Historical links and usage records have been retained.")
+            persist(store)
             st.rerun()
     else:
         st.info("No active companies to manage.")
@@ -335,6 +342,7 @@ with tabs[6]:
         if st.button("Remove Contact from Active Directory (Archive)", use_container_width=True):
             archive_record(store, "supplier_contacts", conmap[selected], True)
             st.success("Contact archived; historical records remain linked.")
+            persist(store)
             st.rerun()
     else:
         st.info("No active contacts to manage.")
