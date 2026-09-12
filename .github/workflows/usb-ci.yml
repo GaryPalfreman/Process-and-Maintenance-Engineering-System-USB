@@ -6,6 +6,7 @@ on:
     paths:
       - '*.py'
       - 'pages/*.py'
+      - '*.sh'
       - '.github/workflows/usb-ci.yml'
   workflow_dispatch:
 
@@ -17,3 +18,17 @@ jobs:
       - name: Python syntax check
         run: |
           python3 -m py_compile *.py pages/*.py
+      - name: Linux launcher shell syntax check
+        run: |
+          sh -n "START ENGINEERING SYSTEM - LINUX.sh"
+      - name: Linux install-path smoke check
+        run: |
+          python3 - <<'PY'
+          import platform
+          import install_local
+          print("CI platform:", platform.system())
+          path = install_local.install_root()
+          print("Linux runtime path:", path)
+          assert str(path).endswith("/.local/share/PMES-USB") or "/.local/share/PMES-USB" in str(path)
+          print("Linux installer path logic: PASS")
+          PY
