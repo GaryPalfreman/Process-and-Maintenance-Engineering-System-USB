@@ -115,7 +115,7 @@ def encryption_metadata(vault):
     if not path.exists():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema") != "pmes-encryption-v1":
+    if data.get("schema") not in {"pmes-encryption-v1", "pmes-encryption-v2"}:
         raise ValueError("Unsupported Engineering Vault encryption metadata")
     return data
 
