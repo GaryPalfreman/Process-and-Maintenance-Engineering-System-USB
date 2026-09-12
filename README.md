@@ -6,11 +6,25 @@ It started from the web-edition baseline so the engineering data model, hidden U
 
 ## Current status
 
-USB edition version: **0.3 — One-Click Launcher test build**
+USB edition version: **0.4 — Operational Hardening test build**
 
 The connected Engineering Vault is the live data source. The local application runs from the computer while engineering data, backups and engineering documents remain on the external HDD/SSD.
 
 The current test vault is the exFAT drive `M-P-ENG-SYS`, initialised with an `ENGINEERING_SYSTEM` vault. The application finds it by `vault_identity.json`, not by the volume name, macOS mount path or Windows drive letter.
+
+v0.4 adds:
+
+- live Engineering Vault presence monitoring every two seconds
+- write blocking if the vault disappears
+- backup blocking if the vault disappears
+- SHA-256 checksums for newly created ZIP backups
+- backup integrity validation
+- in-app restore of validated backups
+- automatic pre-restore safety backup
+- Save, Backup & Safely Eject workflow
+- a USB System Health page
+- a non-destructive persistence self-test across Assets, Engineering Actions, Maintenance and PM Schedules
+- linked hidden-UUID verification during the persistence self-test
 
 ## Engineering Vault structure
 
@@ -60,7 +74,7 @@ Connect `M-P-ENG-SYS`, then either:
 
 The launcher checks that the Engineering Vault is present and then starts the local Streamlit application. Windows drive-letter changes do not matter.
 
-Modern macOS and Windows versions intentionally restrict classic removable-media autorun. The supported v0.3 workflow is therefore one-click launch rather than silently executing software as soon as the drive is attached. An optional authorised-computer background watcher can be considered later if automatic launch-on-connect is still desirable.
+Modern macOS and Windows versions intentionally restrict classic removable-media autorun. The supported workflow is therefore one-click launch rather than silently executing software as soon as the drive is attached. An optional authorised-computer background watcher can be considered later if automatic launch-on-connect is still desirable.
 
 ## Storage and persistence
 
@@ -69,9 +83,14 @@ Modern macOS and Windows versions intentionally restrict classic removable-media
 - cross-platform drive discovery
 - Engineering Vault identity validation
 - drive-letter-independent vault detection
+- live vault-presence verification
 - direct JSON loading and saving
 - flushed atomic replacement of the live JSON
 - timestamped ZIP backups
+- SHA-256 backup checksum sidecars
+- backup validation and restore helpers
+- automatic pre-restore safety backup
+- best-effort safe eject support for macOS and Windows
 - automatic backup-due checking
 - drive free-space/status reporting
 - filtering of common macOS internal and Time Machine mounts
@@ -80,15 +99,24 @@ Modern macOS and Windows versions intentionally restrict classic removable-media
 
 - one-vault-required startup behaviour
 - shared store initialisation across Streamlit pages
-- explicit durable persistence to the Engineering Vault
+- write blocking when the Engineering Vault is unavailable
+- live two-second vault monitoring
 - visible Engineering Vault status
 - manual Save and Create Vault Backup controls
+- Backup & Recovery controls
+- Save, Backup & Safely Eject session-ending workflow
+
+`usb_diagnostics.py` and `pages/5_USB_System_Health.py` provide a non-destructive HDD persistence test. The test creates temporary linked records in Assets, Engineering Actions, Maintenance and PM Schedules, saves them to the HDD, reloads them, verifies their UUIDs and relationships, then restores the original live dataset automatically. A safety backup is created before the test.
 
 `launch_local.py` is the common cross-platform application launcher used by the clickable Mac and Windows files.
 
-## First installation on the current Mac
+## Updating an already installed computer
 
-Because the repository is already cloned locally, update it and run the installer once:
+Repository changes do not automatically overwrite the installed local copy in `~/Applications/PMES-USB` or `%LOCALAPPDATA%\PMES-USB`.
+
+After pulling a new USB-edition build, run the installer again. It refreshes the installed application while leaving the Engineering Vault dataset on the external drive untouched.
+
+On the current Mac:
 
 ```bash
 cd ~/Downloads/Process-and-Maintenance-Engineering-System-USB
@@ -96,9 +124,9 @@ git pull
 python3 install_local.py
 ```
 
-After that completes, use the clickable launcher instead of Terminal commands for normal operation.
+After the update, return to the clickable launcher for normal use.
 
-## First installation on a Windows computer
+## First installation on Windows
 
 Clone or copy the USB repository once, connect `M-P-ENG-SYS`, then run:
 
@@ -108,11 +136,17 @@ py install_local.py
 
 After installation, use the Windows launcher on the drive or desktop.
 
-## Backups and safe removal
+## Backup, recovery and safe removal
 
-The live structured dataset is `engineering_data.json`. Saves use a temporary file and atomic replacement to reduce corruption risk. ZIP backups are stored under `Backups/YYYY-MM/` and a manual backup control is available in the application.
+The live structured dataset is `engineering_data.json`. Saves use a temporary file and atomic replacement to reduce corruption risk.
 
-Do not disconnect the external drive while a save or backup is in progress. Close the Engineering System and eject the drive normally before unplugging it.
+New ZIP backups are stored under `Backups/YYYY-MM/` and receive a matching `.sha256` checksum file. Legacy backups without a checksum can still be structurally validated.
+
+Before restoring a selected backup, the system validates the backup and automatically creates a `pre_restore` safety backup of the current live dataset.
+
+Use **Save, Backup & Safely Eject** before disconnecting the HDD. The system saves the live dataset, creates a session-close backup and asks the operating system to eject the drive. If automatic eject is unavailable, the data remains safely saved and the interface tells the user to eject manually.
+
+Do not physically disconnect the external drive while a save, restore, self-test or backup is in progress.
 
 ## Security note
 
