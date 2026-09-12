@@ -1,15 +1,16 @@
-"""One-time installer for the PMES USB edition.
+"""Installer/updater for the PMES USB edition.
 
-Run this once on each Mac or Windows computer that will use the Engineering Vault.
-It installs an independent local application copy, creates a private virtual
-environment, installs requirements, and places cross-platform launchers on the
-connected Engineering Vault drive and the local desktop.
+Run this on each Mac or Windows computer that will use the Engineering Vault.
+The installed application is a clean runtime snapshot, NOT a Git repository.
+The external Engineering Vault and its data are never modified by application
+updates except for refreshing the two clickable launcher files on the drive.
 """
 from __future__ import annotations
 
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,12 @@ MAC_LAUNCHER = "START ENGINEERING SYSTEM - MAC.command"
 WINDOWS_LAUNCHER = "START ENGINEERING SYSTEM - WINDOWS.cmd"
 DESKTOP_NAME_MAC = "Process and Maintenance Engineering System.command"
 DESKTOP_NAME_WINDOWS = "Process and Maintenance Engineering System.cmd"
+
+# Repository/development material must never be copied into the installed runtime.
+EXCLUDED_NAMES = {
+    ".git", ".github", ".venv", "__pycache__", ".DS_Store",
+    ".pytest_cache", ".mypy_cache", ".ruff_cache",
+}
 
 
 def install_root() -> Path:
@@ -34,15 +41,60 @@ def vault_root(vault: Path) -> Path:
     return vault.parent if vault.name == "ENGINEERING_SYSTEM" else vault
 
 
-def copy_application(source: Path, target: Path) -> None:
+def _make_writable(path: str) -> None:
+    """Best-effort permission repair for files copied by an older installer."""
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    except OSError:
+        try:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+
+
+def _rmtree_onerror(func, path, exc_info):
+    """Retry removal after making a legacy file/directory writable."""
+    _make_writable(path)
+    func(path)
+
+
+def remove_path(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path, onerror=_rmtree_onerror)
+    else:
+        _make_writable(str(path))
+        path.unlink(missing_ok=True)
+
+
+def clean_runtime(target: Path) -> None:
+    """Remove the old runtime while preserving its virtual environment.
+
+    This deliberately removes any legacy .git directory copied by v0.3 so Git
+    permissions can never interfere with future application updates.
+    """
     target.mkdir(parents=True, exist_ok=True)
-    excluded = {".venv", "__pycache__", ".DS_Store"}
+    for item in list(target.iterdir()):
+        if item.name == ".venv":
+            continue
+        remove_path(item)
+
+
+def copy_application(source: Path, target: Path) -> None:
+    """Copy a fresh runtime snapshot without repository metadata."""
+    clean_runtime(target)
     for item in source.iterdir():
-        if item.name in excluded:
+        if item.name in EXCLUDED_NAMES:
             continue
         destination = target / item.name
         if item.is_dir():
-            shutil.copytree(item, destination, dirs_exist_ok=True)
+            shutil.copytree(
+                item,
+                destination,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(*EXCLUDED_NAMES),
+            )
         else:
             shutil.copy2(item, destination)
 
@@ -55,7 +107,11 @@ def create_environment(target: Path) -> Path:
         python = venv / "Scripts" / "python.exe"
     else:
         python = venv / "bin" / "python"
-    subprocess.check_call([str(python), "-m", "pip", "install", "--upgrade", "pip"])
+    if not python.exists():
+        # A damaged/incomplete environment is safer to rebuild than repair.
+        remove_path(venv)
+        subprocess.check_call([sys.executable, "-m", "venv", str(venv)])
+        python = (venv / "Scripts" / "python.exe") if platform.system() == "Windows" else (venv / "bin" / "python")
     subprocess.check_call([str(python), "-m", "pip", "install", "-r", str(target / "requirements.txt")])
     return python
 
@@ -133,17 +189,26 @@ def main() -> int:
     root = vault_root(Path(vaults[0]))
 
     print(f"Engineering Vault: {vaults[0]}")
-    print(f"Installing local application to: {target}")
+    print(f"Updating clean local runtime at: {target}")
     copy_application(source, target)
     create_environment(target)
     write_launchers(root)
     desktop_launcher = write_desktop_launcher()
 
-    print("\nInstallation complete.")
+    # Defensive verification: installed runtime must never contain Git metadata.
+    legacy_git = target / ".git"
+    if legacy_git.exists():
+        remove_path(legacy_git)
+    if legacy_git.exists():
+        raise RuntimeError("Installed runtime still contains .git metadata; update aborted.")
+
+    print("\nInstallation/update complete.")
+    print("Runtime mode: clean local snapshot (no Git metadata)")
     print(f"Mac launcher on drive: {root / MAC_LAUNCHER}")
     print(f"Windows launcher on drive: {root / WINDOWS_LAUNCHER}")
     if desktop_launcher:
         print(f"Desktop launcher: {desktop_launcher}")
+    print("Engineering Vault data was not replaced or reset.")
     print("From now on, connect the Engineering Vault and double-click the launcher for this computer.")
     return 0
 
