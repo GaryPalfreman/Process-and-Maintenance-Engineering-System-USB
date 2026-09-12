@@ -2,111 +2,121 @@
 
 This repository is the independent local USB/HDD edition of the Process and Maintenance Engineering System.
 
-It started from the web-edition baseline so the engineering data model, hidden UUID relationships, modules, Contacts & Suppliers, Production Readiness, Engineering Operations and Engineering Control Centre remain compatible with the web edition. From this point onward the USB repository and web repository are maintained separately.
-
-## Purpose
-
-The USB edition is intended to become the operational local version while the web repository remains available for development, testing and layout changes.
-
-The local design is:
-
-- Streamlit runs on the local Mac or Windows computer
-- the live engineering dataset is stored on an external USB HDD/SSD
-- the same JSON schema and UUID relationships are retained
-- backups and engineering documents live on the external drive
-- the drive is identified by its Engineering Vault marker rather than a fixed path or Windows drive letter
-- web and USB datasets remain import/export compatible
+It started from the web-edition baseline so the engineering data model, hidden UUID relationships, modules, Contacts & Suppliers, Production Readiness, Engineering Operations and Engineering Control Centre remain compatible with the web edition. The USB and web repositories are maintained separately.
 
 ## Current status
 
-USB edition version: **0.2 — Vault-wired local test build**
+USB edition version: **0.3 — One-Click Launcher test build**
 
-The main application and all four advanced Streamlit pages now initialise through `usb_runtime.py` rather than creating independent in-memory stores. The connected Engineering Vault is therefore the live data source.
+The connected Engineering Vault is the live data source. The local application runs from the computer while engineering data, backups and engineering documents remain on the external HDD/SSD.
 
-`usb_storage.py` provides:
-
-- cross-platform external-drive discovery for macOS, Windows and Linux
-- validation of `vault_identity.json`
-- drive-letter-independent Engineering Vault detection
-- direct JSON loading from the external drive
-- flushed atomic replacement of the live JSON file
-- timestamped ZIP backups
-- automatic backup-due checking
-- drive free-space/status reporting
-- filtering of common macOS internal/Time Machine mounts
-
-`usb_runtime.py` provides:
-
-- one-vault-required startup behaviour
-- shared store initialisation across every Streamlit page
-- automatic persistence when the engineering store is mutated
-- a visible Engineering Vault Connected status
-- free-space display
-- manual Save to Engineering Vault control
-- manual Create Vault Backup control
-
-`launch_local.py` is the cross-platform launcher. It locates the Engineering Vault first and then starts Streamlit locally. It does not rely on `/Volumes/...` or a specific Windows drive letter.
+The current test vault is the exFAT drive `M-P-ENG-SYS`, initialised with an `ENGINEERING_SYSTEM` vault. The application finds it by `vault_identity.json`, not by the volume name, macOS mount path or Windows drive letter.
 
 ## Engineering Vault structure
 
 ```text
-ENGINEERING_SYSTEM/
-├── vault_identity.json
-├── engineering_data.json
-├── Backups/
-│   └── YYYY-MM/
-└── Documents/
+M-P-ENG-SYS/
+├── START ENGINEERING SYSTEM - MAC.command
+├── START ENGINEERING SYSTEM - WINDOWS.cmd
+└── ENGINEERING_SYSTEM/
+    ├── vault_identity.json
+    ├── engineering_data.json
+    ├── Backups/
+    │   └── YYYY-MM/
+    └── Documents/
 ```
 
-The Documents area is intended for manuals, drawings, supplier documents, service reports, photos, calibration records and other engineering references that should live beside the structured system data.
+`engineering_data.json` remains compatible with the web edition schema and hidden UUID relationship model.
 
-## Current test vault
+## One-time computer setup
 
-The first physical test vault has been initialised on the external drive named:
+Run `install_local.py` once on every Mac or Windows computer that will use the Engineering Vault.
 
-`M-P-ENG-SYS`
+The installer:
 
-On macOS it is currently mounted under `/Volumes/M-P-ENG-SYS`. On Windows the same drive can receive any available drive letter; the application identifies it using the vault marker instead.
+- confirms that exactly one Engineering Vault is connected
+- installs the local application to a predictable computer-local folder
+- creates a private Python virtual environment
+- installs the required Python packages
+- places both Mac and Windows launchers at the root of the Engineering Vault drive
+- creates a launcher on the current computer desktop
 
-The external drive is formatted as **exFAT** so it can be read and written natively by both macOS and Windows.
+Local application locations:
 
-## Running locally on macOS
+```text
+macOS:   ~/Applications/PMES-USB/
+Windows: %LOCALAPPDATA%\PMES-USB\
+```
 
-From the cloned USB repository:
+After setup, normal operation does not require Bash, Terminal, Command Prompt or PowerShell commands.
+
+## Normal use after setup
+
+Connect `M-P-ENG-SYS`, then either:
+
+- double-click `START ENGINEERING SYSTEM - MAC.command` on macOS
+- double-click `START ENGINEERING SYSTEM - WINDOWS.cmd` on Windows
+- or use the desktop launcher created during setup
+
+The launcher checks that the Engineering Vault is present and then starts the local Streamlit application. Windows drive-letter changes do not matter.
+
+Modern macOS and Windows versions intentionally restrict classic removable-media autorun. The supported v0.3 workflow is therefore one-click launch rather than silently executing software as soon as the drive is attached. An optional authorised-computer background watcher can be considered later if automatic launch-on-connect is still desirable.
+
+## Storage and persistence
+
+`usb_storage.py` provides:
+
+- cross-platform drive discovery
+- Engineering Vault identity validation
+- drive-letter-independent vault detection
+- direct JSON loading and saving
+- flushed atomic replacement of the live JSON
+- timestamped ZIP backups
+- automatic backup-due checking
+- drive free-space/status reporting
+- filtering of common macOS internal and Time Machine mounts
+
+`usb_runtime.py` provides:
+
+- one-vault-required startup behaviour
+- shared store initialisation across Streamlit pages
+- explicit durable persistence to the Engineering Vault
+- visible Engineering Vault status
+- manual Save and Create Vault Backup controls
+
+`launch_local.py` is the common cross-platform application launcher used by the clickable Mac and Windows files.
+
+## First installation on the current Mac
+
+Because the repository is already cloned locally, update it and run the installer once:
 
 ```bash
 cd ~/Downloads/Process-and-Maintenance-Engineering-System-USB
 git pull
-python3 -m pip install -r requirements.txt
-python3 launch_local.py
+python3 install_local.py
 ```
 
-Keep `M-P-ENG-SYS` connected before launching.
+After that completes, use the clickable launcher instead of Terminal commands for normal operation.
 
-## Running locally on Windows
+## First installation on a Windows computer
 
-Clone or copy this USB repository to the Windows computer, open Command Prompt or PowerShell in the repository folder, then run:
+Clone or copy the USB repository once, connect `M-P-ENG-SYS`, then run:
 
 ```text
-py -m pip install -r requirements.txt
-py launch_local.py
+py install_local.py
 ```
 
-The launcher searches available drives for the Engineering Vault marker, so no fixed `D:`, `E:` or `F:` assignment is required.
+After installation, use the Windows launcher on the drive or desktop.
 
 ## Backups and safe removal
 
-The live structured data is `engineering_data.json`. Saves are written through a temporary file and then atomically replaced to reduce corruption risk.
+The live structured dataset is `engineering_data.json`. Saves use a temporary file and atomic replacement to reduce corruption risk. ZIP backups are stored under `Backups/YYYY-MM/` and a manual backup control is available in the application.
 
-Automatic ZIP backups are created periodically under `Backups/YYYY-MM/`. A manual backup button is also available in the application sidebar.
-
-Do not physically disconnect the external drive while a save or backup is in progress. Close the local Engineering System and eject the drive normally before unplugging it.
+Do not disconnect the external drive while a save or backup is in progress. Close the Engineering System and eject the drive normally before unplugging it.
 
 ## Security note
 
-`vault_identity.json` is a physical-vault identity marker, not encryption or strong authentication. Because this drive must remain usable on both macOS and Windows, the current engineering dataset should be treated as unencrypted unless a separate cross-platform encryption layer is added.
-
-A later security phase can add application-level encryption and/or stronger authorised-computer/authorised-vault pairing without changing the engineering JSON schema.
+`vault_identity.json` identifies the intended physical Engineering Vault but is not encryption or strong authentication. Because the drive is exFAT for native macOS/Windows compatibility, treat the current data as unencrypted unless an application-level encryption layer is added later.
 
 ## Relationship to the web edition
 
@@ -116,13 +126,7 @@ Web repository:
 USB repository:
 `GaryPalfreman/Process-and-Maintenance-Engineering-System-USB`
 
-There is no automatic synchronisation between these repositories. Changes are transferred only when explicitly requested.
-
-## Data compatibility
-
-Schema: `process-maintenance-engineering-system`
-
-Hidden UUIDs remain the relational keys. Human-facing business IDs, legacy IDs and aliases remain editable metadata. JSON from the web edition can therefore be migrated into the USB edition without redesigning record relationships.
+There is no automatic synchronisation between them. Changes are transferred only when explicitly requested.
 
 ## Validation
 
