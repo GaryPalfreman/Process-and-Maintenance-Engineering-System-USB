@@ -5,9 +5,14 @@ Vault. The installed application is a clean runtime snapshot, NOT a Git
 repository. The external Engineering Vault and its data are never modified by
 application updates except for refreshing the clickable launcher files on the
 drive.
+
+This installer intentionally uses only Python's standard library until the
+local virtual environment has been created and requirements.txt has been
+installed. This allows it to run on a completely fresh Python installation.
 """
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -16,9 +21,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from usb_storage import find_vaults
-
 APP_FOLDER = "PMES-USB"
+VAULT_FOLDER = "ENGINEERING_SYSTEM"
+MARKER_FILE = "vault_identity.json"
+
 MAC_LAUNCHER = "START ENGINEERING SYSTEM - MAC.command"
 WINDOWS_LAUNCHER = "START ENGINEERING SYSTEM - WINDOWS.cmd"
 LINUX_LAUNCHER = "START ENGINEERING SYSTEM - LINUX.sh"
@@ -38,6 +44,57 @@ EXCLUDED_NAMES = {
 }
 
 
+def removable_roots() -> list[Path]:
+    """Find removable-drive roots without importing application dependencies."""
+    roots: list[Path] = []
+    system = platform.system()
+    if system == "Darwin":
+        base = Path("/Volumes")
+        if base.exists():
+            for p in base.iterdir():
+                if not p.is_dir():
+                    continue
+                if p.name in {"Macintosh HD", "Macintosh HD - Data"} or p.name.startswith(".timemachine"):
+                    continue
+                roots.append(p)
+    elif system == "Windows":
+        for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
+            p = Path(f"{letter}:\\")
+            if p.exists():
+                roots.append(p)
+    else:
+        user = os.environ.get("USER", "")
+        for base in [Path("/media") / user, Path("/run/media") / user, Path("/mnt")]:
+            if base.exists():
+                roots.extend(p for p in base.iterdir() if p.is_dir())
+    return roots
+
+
+def vault_path(root: Path) -> Path:
+    p = Path(root)
+    return p if p.name == VAULT_FOLDER else p / VAULT_FOLDER
+
+
+def valid_vault(path: Path) -> bool:
+    marker = path / MARKER_FILE
+    if not marker.exists():
+        return False
+    try:
+        identity = json.loads(marker.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return identity.get("schema") == "pmes-usb-vault" and bool(identity.get("vault_id"))
+
+
+def find_vaults() -> list[Path]:
+    found: list[Path] = []
+    for root in removable_roots():
+        candidate = vault_path(root)
+        if valid_vault(candidate):
+            found.append(candidate)
+    return found
+
+
 def install_root() -> Path:
     system = platform.system()
     if system == "Windows":
@@ -50,7 +107,7 @@ def install_root() -> Path:
 
 
 def vault_root(vault: Path) -> Path:
-    return vault.parent if vault.name == "ENGINEERING_SYSTEM" else vault
+    return vault.parent if vault.name == VAULT_FOLDER else vault
 
 
 def _make_writable(path: str) -> None:
@@ -106,6 +163,7 @@ def copy_application(source: Path, target: Path) -> None:
 def create_environment(target: Path) -> Path:
     venv = target / ".venv"
     if not venv.exists():
+        print("Creating local Python virtual environment...")
         subprocess.check_call([sys.executable, "-m", "venv", str(venv)])
     if platform.system() == "Windows":
         python = venv / "Scripts" / "python.exe"
@@ -115,6 +173,8 @@ def create_environment(target: Path) -> Path:
         remove_path(venv)
         subprocess.check_call([sys.executable, "-m", "venv", str(venv)])
         python = (venv / "Scripts" / "python.exe") if platform.system() == "Windows" else (venv / "bin" / "python")
+    print("Installing/updating PMES application dependencies...")
+    subprocess.check_call([str(python), "-m", "pip", "install", "--upgrade", "pip"])
     subprocess.check_call([str(python), "-m", "pip", "install", "-r", str(target / "requirements.txt")])
     return python
 
@@ -245,6 +305,11 @@ def write_desktop_launcher() -> list[Path]:
 
 
 def main() -> int:
+    print("Process and Maintenance Engineering System USB installer")
+    print(f"Python: {sys.executable}")
+    print(f"Operating system: {platform.system()}")
+    print("Looking for Engineering Vault...")
+
     vaults = find_vaults()
     if len(vaults) != 1:
         if not vaults:
@@ -258,7 +323,6 @@ def main() -> int:
     root = vault_root(Path(vaults[0]))
 
     print(f"Engineering Vault: {vaults[0]}")
-    print(f"Operating system: {platform.system()}")
     print(f"Updating clean local runtime at: {target}")
     copy_application(source, target)
     create_environment(target)
